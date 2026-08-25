@@ -24,6 +24,7 @@ let cloudSyncTimerId;
 let cloudSyncInFlight = false;
 let cloudSyncQueued = false;
 let cloudSyncState = syncConfig ? "waiting" : "off";
+let cloudSyncDetail = "";
 let lastCloudSyncAt = null;
 let editingActiveLightId = null;
 
@@ -505,6 +506,8 @@ function inferGitHubOwner() {
 
 function setCloudSyncState(state, detail = "") {
   cloudSyncState = state;
+  if (detail) cloudSyncDetail = detail;
+  else if (state === "off" || state === "syncing") cloudSyncDetail = "";
   const status = $("#cloudSyncStatus");
   const summary = $("#cloudSyncSummary");
   if (!status || !summary) return;
@@ -517,7 +520,7 @@ function setCloudSyncState(state, detail = "") {
   };
   status.textContent = labels[state] || labels.off;
   status.dataset.state = state;
-  summary.textContent = detail || (syncConfig
+  summary.textContent = detail || cloudSyncDetail || (syncConfig
     ? `私有仓库 ${syncConfig.owner}/${syncConfig.repo} · 云端内容已加密`
     : "连接私有 GitHub 仓库后，多台设备会自动合并记录");
 }
@@ -533,7 +536,7 @@ function renderCloudSyncPanel() {
   $("#cloudDisconnectButton").hidden = !connected;
   $("#cloudSyncNowButton").hidden = !connected;
   $("#cloudConnectButton").textContent = connected ? "更新配置并同步" : "连接并首次同步";
-  setCloudSyncState(cloudSyncState);
+  setCloudSyncState(cloudSyncState, cloudSyncDetail);
 }
 
 function scheduleCloudSync(delay = 1400) {

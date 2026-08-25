@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#fff8f3" />
+    <meta name="description" content="简单好用的宝宝吃奶、排泄与蓝光照护记录工具" />
+    <title>宝宝照护日记</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="宝宝照护日记首页">
+          <span class="brand-mark" aria-hidden="true">☁</span>
+          <span><strong>宝宝照护日记</strong><small>每一刻，都安心记住</small></span>
+        </a>
+        <button class="data-button" id="dataButton" type="button" aria-label="打开数据管理">
+          <span class="data-button-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7c0 1.7 3.1 3 7 3s7-1.3 7-3-3.1-3-7-3-7 1.3-7 3Zm0 0v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/></svg></span>
+          <span><strong>数据管理</strong><small id="historyStatus">正在恢复历史数据…</small></span>
+        </button>
+      </header>
+
+      <main>
+        <section class="welcome-card" aria-labelledby="welcomeTitle">
+          <div>
+            <p class="eyebrow" id="todayLabel">今天 · 宝宝的第一个温柔日常</p>
+            <h1 id="welcomeTitle">嗨，今天也辛苦啦 <span aria-hidden="true">👋</span></h1>
+            <p>吃饱、睡好、舒舒服服长大。</p>
+          </div>
+          <div class="baby-illustration" aria-hidden="true">
+            <span class="star star-one">✦</span><span class="star star-two">✦</span>
+            <div class="moon">☾</div>
+            <div class="baby-face"><i></i><b></b><em></em></div>
+          </div>
+        </section>
+
+        <section class="date-toolbar" aria-label="选择查看日期">
+          <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
+          <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
+            <span id="datePrimary">今天</span><small id="dateSecondary"></small>
+          </button>
+          <input class="hidden-date" id="datePicker" type="date" />
+          <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
+          <button class="today-button" id="todayButton" type="button">回到今天</button>
+        </section>
+
+        <section aria-labelledby="quickTitle">
+          <div class="section-heading">
+            <div><p class="eyebrow">快捷记录</p><h2 id="quickTitle">刚刚发生了什么？</h2></div>
+            <p>点一下就能记</p>
+          </div>
+          <div class="quick-grid">
+            <button class="quick-card feeding" data-open="feeding" type="button">
+              <span class="quick-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v4l2 3v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9l2-3V3Zm0 9h8M10 3h4"/></svg>
+              </span>
+              <span><strong>吃奶</strong><small>奶粉 / 母乳</small></span><b>＋</b>
+            </button>
+            <button class="quick-card poop" data-open="poop" type="button">
+              <span class="quick-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9c0-3 2-5 5-5 0 2 1 3 3 4 2 1 3 3 3 5a6 6 0 0 1-12 0c0-2 1-3 1-4Z"/><path d="M10 15c1 1 3 1 4 0"/></svg>
+              </span>
+              <span><strong>大便</strong><small>记录量与时间</small></span><b>＋</b>
+            </button>
+            <button class="quick-card pee" data-open="pee" type="button">
+              <span class="quick-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3S6 10 6 15a6 6 0 0 0 12 0c0-5-6-12-6-12Z"/><path d="M9 16c.5 1.3 1.5 2 3 2"/></svg>
+              </span>
+              <span><strong>小便</strong><small>记录量与时间</small></span><b>＋</b>
+            </button>
+            <button class="quick-card light" data-open="light" type="button">
+              <span class="quick-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m6.4.6L17 7M21 12h-2M5 12H3m4-5L5.6 5.6M12 8a4 4 0 0 0-2 7.5V18h4v-2.5A4 4 0 0 0 12 8Zm-2 13h4"/></svg>
+              </span>
+              <span><strong>照蓝光</strong><small id="lightQuickSubtitle">开始 / 结束</small></span><b>＋</b>
+            </button>
+          </div>
+        </section>
+
+        <section class="feeding-countdown" id="feedingCountdown" aria-labelledby="countdownTitle">
+          <div class="countdown-visual" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><circle class="countdown-track" cx="24" cy="24" r="20"/><circle class="countdown-progress" id="countdownProgress" cx="24" cy="24" r="20"/></svg>
+            <span>🍼</span>
+          </div>
+          <div class="countdown-copy">
+            <div class="countdown-label"><span id="countdownTitle">距离下次吃奶</span><b>按 3 小时间隔</b></div>
+            <strong id="countdownTime">--:--:--</strong>
+            <p id="countdownLastFeed">记录一次吃奶后开始倒计时</p>
+          </div>
+          <div class="countdown-expected">
+            <small>预计下次</small><strong id="nextFeedingTime">--:--</strong><span id="nextFeedingDate">等待记录</span>
+          </div>
+          <button class="countdown-add" data-open="feeding" id="countdownAddButton" type="button">记录吃奶</button>
+        </section>
+
+        <section class="active-light" id="activeLight" hidden aria-live="polite">
+          <div class="active-pulse"><span></span></div>
+          <div><small>正在照蓝光</small><strong id="activeLightDuration">00:00:00</strong><p id="activeLightStart"></p></div>
+          <button id="stopLightButton" type="button">现在结束</button>
+        </section>
+
+        <section aria-labelledby="summaryTitle">
+          <div class="section-heading">
+            <div><p class="eyebrow">今日概览</p><h2 id="summaryTitle">一天的小小足迹</h2></div>
+            <p id="summaryDate"></p>
+          </div>
+          <div class="summary-grid">
+            <article class="summary-card feeding-summary">
+              <div class="summary-icon">🍼</div><small>吃奶</small>
+              <strong><span id="feedingCount">0</span> <i>次</i></strong>
+              <p>共 <b id="feedingAmount">0 ml</b></p>
+              <div class="summary-detail"><span>奶粉 <b id="formulaStats">0次 · 0ml</b></span><span>母乳 <b id="breastStats">0次 · 0ml</b></span></div>
+            </article>
+            <article class="summary-card poop-summary">
+              <div class="summary-icon">💩</div><small>大便</small>
+              <strong><span id="poopCount">0</span> <i>次</i></strong>
+              <p id="poopDetail">今天还没有记录</p>
+            </article>
+            <article class="summary-card pee-summary">
+              <div class="summary-icon">💧</div><small>小便</small>
+              <strong><span id="peeCount">0</span> <i>次</i></strong>
+              <p id="peeDetail">今天还没有记录</p>
+            </article>
+            <article class="summary-card light-summary">
+              <div class="summary-icon">☀️</div><small>蓝光累计</small>
+              <strong id="lightDuration">0分钟</strong>
+              <p>共 <b id="lightCount">0 次</b></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="timeline-section" aria-labelledby="timelineTitle">
+          <div class="section-heading timeline-heading">
+            <div><p class="eyebrow">一天的节奏</p><h2 id="timelineTitle">24 小时照护时间轴</h2></div>
+            <p id="timelineChartDate"></p>
+          </div>
+          <div class="day-timeline" id="dayTimeline" aria-live="polite"></div>
+          <div class="timeline-legend" aria-label="时间轴图例"><span><i class="feeding-key"></i>吃奶</span><span><i class="poop-key"></i>大便</span><span><i class="pee-key"></i>小便</span><span><i class="light-key"></i>蓝光时段</span><span class="hover-guide">悬浮圆点查看时间和详情</span></div>
+          <div class="detail-toolbar">
+            <h3>当天详细记录</h3>
+            <div class="filter-tabs" role="tablist" aria-label="筛选记录">
+              <button class="active" data-filter="all" type="button">全部</button>
+              <button data-filter="feeding" type="button">吃奶</button>
+              <button data-filter="output" type="button">排泄</button>
+              <button data-filter="light" type="button">蓝光</button>
+            </div>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
+      </main>
+
+      <footer><span>☁</span> 记录会自动保存在当前浏览器，本地服务运行时也会自动更新备份文件 <span>☁</span></footer>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button id="toastAction" type="button" hidden>导出备份</button></div>
+
+    <div class="modal-backdrop" id="modalBackdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <button class="modal-close" id="modalClose" type="button" aria-label="关闭">×</button>
+        <div class="modal-heading"><span id="modalIcon">🍼</span><div><p class="eyebrow">添加记录</p><h2 id="modalTitle">记录吃奶</h2></div></div>
+        <form id="recordForm">
+          <input id="recordType" type="hidden" />
+          <div class="form-section" id="feedingFields">
+            <label>喂养方式</label>
+            <div class="segmented">
+              <label><input type="radio" name="feedingType" value="formula" checked /><span>🍼 奶粉</span></label>
+              <label><input type="radio" name="feedingType" value="breast" /><span>🤱 母乳</span></label>
+            </div>
+            <label for="feedingAmountInput">奶量 <small>（毫升）</small></label>
+            <div class="number-field"><input id="feedingAmountInput" type="number" inputmode="decimal" min="0" step="1" placeholder="例如 90" /><span>ml</span></div>
+            <div class="amount-chips" aria-label="快速选择奶量">
+              <button type="button" data-amount="30">30</button><button type="button" data-amount="60">60</button><button type="button" data-amount="90">90</button><button type="button" data-amount="120">120</button>
+            </div>
+          </div>
+
+          <div class="form-section" id="outputFields" hidden>
+            <label>大概的量</label>
+            <div class="amount-choice">
+              <label><input type="radio" name="outputAmount" value="small" /><span><b>小</b><small>一点点</small></span></label>
+              <label><input type="radio" name="outputAmount" value="medium" checked /><span><b>中</b><small>一般</small></span></label>
+              <label><input type="radio" name="outputAmount" value="large" /><span><b>大</b><small>比较多</small></span></label>
+            </div>
+          </div>
+
+          <div class="form-section" id="singleTimeFields">
+            <label>发生日期和时间</label>
+            <div class="date-time-row">
+              <div><small>日期</small><input id="eventDateInput" type="date" required aria-label="发生日期" /></div>
+              <div><small>时间</small><input id="eventTimeInput" type="time" step="60" required aria-label="发生时间，只需输入小时和分钟" /></div>
+            </div>
+            <p class="datetime-help">日期可手输或选择，时间框自带“:”</p>
+            <button class="now-link" data-now-for="event" type="button">设为现在</button>
+          </div>
+
+          <div class="form-section light-fields" id="lightFields" hidden>
+            <label>开始日期和时间</label>
+            <div class="date-time-row">
+              <div><small>日期</small><input id="lightStartDateInput" type="date" required aria-label="蓝光开始日期" /></div>
+              <div><small>时间</small><input id="lightStartTimeInput" type="time" step="60" required aria-label="蓝光开始时间，只需输入小时和分钟" /></div>
+            </div>
+            <p class="datetime-help">时间只需输入小时和分钟</p>
+            <button class="now-link" data-now-for="lightStart" type="button">设为现在</button>
+            <label>结束日期和时间 <small>（时间可留空）</small></label>
+            <div class="date-time-row">
+              <div><small>日期</small><input id="lightEndDateInput" type="date" aria-label="蓝光结束日期，默认今天" /></div>
+              <div><small>时间</small><input id="lightEndTimeInput" type="time" step="60" aria-label="蓝光结束时间，留空表示正在进行" /></div>
+            </div>
+            <p class="datetime-help">结束日期默认今天，只填时间即可</p>
+            <button class="now-link" data-now-for="lightEnd" type="button">设为现在</button>
+            <div class="duration-preview ongoing" id="durationPreview"><span>●</span> 未填结束时间，将保存为“正在进行”</div>
+          </div>
+
+          <label for="noteInput">备注 <small>（选填）</small></label>
+          <input id="noteInput" type="text" maxlength="60" placeholder="例如：胃口很好" />
+          <button class="submit-button" id="submitButton" type="submit">保存记录</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="dataModalBackdrop" hidden>
+      <section class="modal data-modal" role="dialog" aria-modal="true" aria-labelledby="dataModalTitle">
+        <button class="modal-close" id="dataModalClose" type="button" aria-label="关闭">×</button>
+        <div class="modal-heading"><span class="data-modal-icon">☁</span><div><p class="eyebrow">本机与云端</p><h2 id="dataModalTitle">历史数据管理</h2></div></div>
+        <div class="data-overview">
+          <span class="sync-check" aria-hidden="true">✓</span>
+          <div><strong id="dataRecordCount">已同步 0 条历史记录</strong><p id="dataDateRange">新增记录会自动保存在当前浏览器</p></div>
+        </div>
+        <div class="data-actions">
+          <button class="data-action cloud-action" id="cloudSyncToggle" type="button" aria-expanded="false" aria-controls="cloudSyncPanel">
+            <span>↻</span><div><strong>GitHub 私有云同步</strong><small id="cloudSyncSummary">连接私有仓库后，多台设备自动合并记录</small></div><b id="cloudSyncStatus" data-state="off">尚未开启</b>
+          </button>
+          <div class="cloud-sync-panel" id="cloudSyncPanel" hidden>
+            <div class="cloud-fields two-columns">
+              <label>GitHub 用户名<input id="cloudOwnerInput" type="text" autocomplete="username" placeholder="例如 baby-parent" /></label>
+              <label>私有数据仓库<input id="cloudRepoInput" type="text" value="baby-care-data" placeholder="baby-care-data" /></label>
+            </div>
+            <label class="cloud-field">仓库访问令牌<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="github_pat_…" /></label>
+            <label class="cloud-field">同步加密密码<input id="cloudPassphraseInput" type="password" autocomplete="new-password" minlength="8" placeholder="至少 8 位；每台设备填写相同密码" /></label>
+            <p class="cloud-help">令牌只授予 <strong>baby-care-data</strong> 私有仓库的 Contents 读写权限。云端文件会再用同步密码进行 AES 加密。<a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">创建专用令牌</a></p>
+            <div class="cloud-buttons">
+              <button class="cloud-primary" id="cloudConnectButton" type="button">连接并首次同步</button>
+              <button id="cloudSyncNowButton" type="button" hidden>立即同步</button>
+              <button class="cloud-danger" id="cloudDisconnectButton" type="button" hidden>关闭同步</button>
+            </div>
+          </div>
+          <button class="data-action export-action" id="exportButton" type="button">
+            <span>⇩</span><div><strong>导出备份</strong><small>下载最新的“宝宝照护记录.json”</small></div><b>›</b>
+          </button>
+          <button class="data-action import-action" id="importButton" type="button">
+            <span>⇧</span><div><strong>导入历史数据</strong><small>选择以前导出的文件，自动合并去重</small></div><b>›</b>
+          </button>
+          <input id="importFileInput" type="file" accept="application/json,.json" hidden />
+        </div>
+        <p class="privacy-note">🔒 浏览器始终保留本机副本。只有主动开启云同步后，记录才会加密写入你自己的私有 GitHub 仓库；导入时会保留现有记录。</p>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

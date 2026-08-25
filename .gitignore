@@ -1,0 +1,8 @@
+# 本地照护数据包含隐私，绝不提交到公开仓库
+宝宝照护记录.json
+宝宝照护记录-*.json
+*.local.json
+
+# 常见本地文件
+.DS_Store
+Thumbs.db

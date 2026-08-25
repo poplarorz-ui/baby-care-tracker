@@ -231,10 +231,7 @@
             <span>↻</span><div><strong>GitHub 私有云同步</strong><small id="cloudSyncSummary">连接私有仓库后，多台设备自动合并记录</small></div><b id="cloudSyncStatus" data-state="off">尚未开启</b>
           </button>
           <div class="cloud-sync-panel" id="cloudSyncPanel" hidden>
-            <div class="cloud-fields two-columns">
-              <label>GitHub 用户名<input id="cloudOwnerInput" type="text" autocomplete="username" placeholder="例如 baby-parent" /></label>
-              <label>私有数据仓库<input id="cloudRepoInput" type="text" value="baby-care-data" placeholder="baby-care-data" /></label>
-            </div>
+            <p class="cloud-help">同步位置已固定为私有仓库 <strong>poplarorz-ui/baby-care-data</strong>，无需填写用户名和仓库名。</p>
             <label class="cloud-field">仓库访问令牌<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="github_pat_…" /></label>
             <p class="cloud-help">令牌只授予 <strong>baby-care-data</strong> 私有仓库的 Contents 读写权限。记录会以明文 JSON 保存在该私有仓库中；令牌只保存在本机浏览器。<a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">创建专用令牌</a></p>
             <div class="cloud-buttons">
@@ -255,6 +252,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260825-3"></script>
+    <script src="app.js?v=20260825-4"></script>
   </body>
 </html>

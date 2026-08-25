@@ -11,7 +11,7 @@
 1. 在同一个 GitHub 账号下新建名为 `baby-care-data` 的 **Private** 仓库
 2. 创建 Fine-grained personal access token，只允许访问该仓库，并将 `Contents` 权限设为 `Read and write`
 3. 打开网页的“数据管理 → GitHub 私有云同步”
-4. 填写 GitHub 用户名、仓库名和令牌
+4. 粘贴仓库访问令牌；网页已固定使用 `poplarorz-ui/baby-care-data`，无需再填写用户名和仓库名
 5. 在其他设备填写同一套配置，以后新增、修改和删除都会自动合并
 
 记录以明文 JSON 保存在私有数据仓库中。访问令牌只保存在各设备浏览器中，不会写入网页代码或公开仓库。请勿把令牌发送给他人。

@@ -1,6 +1,8 @@
 const STORAGE_KEY = "baby-care-tracker-records-v1";
 const DELETED_KEY = "baby-care-tracker-deleted-v1";
 const SYNC_CONFIG_KEY = "baby-care-tracker-github-sync-v1";
+const CLOUD_OWNER = "poplarorz-ui";
+const CLOUD_REPO = "baby-care-data";
 const CLOUD_FILE_PATH = "宝宝照护记录.json";
 const typeMeta = {
   feeding: { title: "记录吃奶", icon: "🍼", label: "吃奶" },
@@ -52,8 +54,8 @@ function loadDeletedRecords() {
 function loadSyncConfig() {
   try {
     const value = JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY));
-    return value?.owner && value?.repo && value?.token
-      ? { owner: value.owner, repo: value.repo, token: value.token }
+    return value?.token
+      ? { owner: CLOUD_OWNER, repo: CLOUD_REPO, token: value.token }
       : null;
   } catch {
     return null;
@@ -502,10 +504,6 @@ function buildExportPayload() {
   return { app: "宝宝照护日记", version: 1, exportedAt: new Date().toISOString(), recordCount: records.length, records };
 }
 
-function inferGitHubOwner() {
-  return window.location.hostname.endsWith(".github.io") ? window.location.hostname.split(".")[0] : "";
-}
-
 function setCloudSyncState(state, detail = "") {
   cloudSyncState = state;
   if (detail) cloudSyncDetail = detail;
@@ -531,8 +529,6 @@ function renderCloudSyncPanel() {
   const connected = Boolean(syncConfig);
   const panel = $("#cloudSyncPanel");
   if (!panel) return;
-  $("#cloudOwnerInput").value = syncConfig?.owner || inferGitHubOwner();
-  $("#cloudRepoInput").value = syncConfig?.repo || "baby-care-data";
   $("#cloudTokenInput").value = syncConfig?.token || "";
   $("#cloudDisconnectButton").hidden = !connected;
   $("#cloudSyncNowButton").hidden = !connected;
@@ -710,12 +706,9 @@ async function syncWithCloud({ silent = false } = {}) {
 }
 
 async function connectCloudSync() {
-  const owner = $("#cloudOwnerInput").value.trim();
-  const repo = $("#cloudRepoInput").value.trim();
   const token = $("#cloudTokenInput").value.trim();
-  if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo)) return showToast("请正确填写 GitHub 用户名和仓库名");
   if (token.length < 20) return showToast("请填写该私有仓库的访问令牌");
-  syncConfig = { owner, repo, token };
+  syncConfig = { owner: CLOUD_OWNER, repo: CLOUD_REPO, token };
   localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(syncConfig));
   cloudSyncState = "waiting";
   renderCloudSyncPanel();

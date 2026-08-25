@@ -236,8 +236,7 @@
               <label>私有数据仓库<input id="cloudRepoInput" type="text" value="baby-care-data" placeholder="baby-care-data" /></label>
             </div>
             <label class="cloud-field">仓库访问令牌<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="github_pat_…" /></label>
-            <label class="cloud-field">同步加密密码<input id="cloudPassphraseInput" type="password" autocomplete="new-password" minlength="8" placeholder="至少 8 位；每台设备填写相同密码" /></label>
-            <p class="cloud-help">令牌只授予 <strong>baby-care-data</strong> 私有仓库的 Contents 读写权限。云端文件会再用同步密码进行 AES 加密。<a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">创建专用令牌</a></p>
+            <p class="cloud-help">令牌只授予 <strong>baby-care-data</strong> 私有仓库的 Contents 读写权限。记录会以明文 JSON 保存在该私有仓库中；令牌只保存在本机浏览器。<a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">创建专用令牌</a></p>
             <div class="cloud-buttons">
               <button class="cloud-primary" id="cloudConnectButton" type="button">连接并首次同步</button>
               <button id="cloudSyncNowButton" type="button" hidden>立即同步</button>
@@ -252,10 +251,10 @@
           </button>
           <input id="importFileInput" type="file" accept="application/json,.json" hidden />
         </div>
-        <p class="privacy-note">🔒 浏览器始终保留本机副本。只有主动开启云同步后，记录才会加密写入你自己的私有 GitHub 仓库；导入时会保留现有记录。</p>
+        <p class="privacy-note">🔒 浏览器始终保留本机副本。开启云同步后，记录会以明文 JSON 写入你自己的私有 GitHub 仓库；导入和同步都会保留并合并现有记录。</p>
       </section>
     </div>
 
-    <script src="app.js?v=20260825-2"></script>
+    <script src="app.js?v=20260825-3"></script>
   </body>
 </html>

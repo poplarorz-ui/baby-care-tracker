@@ -1,7 +1,7 @@
 const STORAGE_KEY = "baby-care-tracker-records-v1";
 const DELETED_KEY = "baby-care-tracker-deleted-v1";
 const SYNC_CONFIG_KEY = "baby-care-tracker-github-sync-v1";
-const CLOUD_FILE_PATH = "records.enc.json";
+const CLOUD_FILE_PATH = "宝宝照护记录.json";
 const typeMeta = {
   feeding: { title: "记录吃奶", icon: "🍼", label: "吃奶" },
   poop: { title: "记录大便", icon: "💩", label: "大便" },
@@ -52,7 +52,9 @@ function loadDeletedRecords() {
 function loadSyncConfig() {
   try {
     const value = JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY));
-    return value?.owner && value?.repo && value?.token && value?.passphrase ? value : null;
+    return value?.owner && value?.repo && value?.token
+      ? { owner: value.owner, repo: value.repo, token: value.token }
+      : null;
   } catch {
     return null;
   }
@@ -150,7 +152,7 @@ function renderHistoryStatus() {
   $("#dataRecordCount").textContent = records.length ? `已保存 ${records.length} 条历史记录` : "已启用浏览器自动保存";
   const timestamps = records.map(recordTimestamp).filter(Number.isFinite).sort((a, b) => a - b);
   $("#dataDateRange").textContent = timestamps.length
-    ? `${formatMonthDay(timestamps[0])} 至 ${formatMonthDay(timestamps[timestamps.length - 1])} · ${syncConfig ? "本机保留并加密同步" : "自动保存在本机"}`
+    ? `${formatMonthDay(timestamps[0])} 至 ${formatMonthDay(timestamps[timestamps.length - 1])} · ${syncConfig ? "本机保留并同步到私有仓库" : "自动保存在本机"}`
     : "新增记录会自动保存在当前浏览器";
 }
 
@@ -514,14 +516,14 @@ function setCloudSyncState(state, detail = "") {
   const labels = {
     off: "尚未开启",
     waiting: "等待同步",
-    syncing: "正在安全同步…",
+    syncing: "正在同步…",
     synced: lastCloudSyncAt ? `已同步 · ${formatTime(lastCloudSyncAt)}` : "已同步",
     error: "同步失败",
   };
   status.textContent = labels[state] || labels.off;
   status.dataset.state = state;
   summary.textContent = detail || cloudSyncDetail || (syncConfig
-    ? `私有仓库 ${syncConfig.owner}/${syncConfig.repo} · 云端内容已加密`
+    ? `私有仓库 ${syncConfig.owner}/${syncConfig.repo} · 自动合并并保存明文 JSON`
     : "连接私有 GitHub 仓库后，多台设备会自动合并记录");
 }
 
@@ -532,7 +534,6 @@ function renderCloudSyncPanel() {
   $("#cloudOwnerInput").value = syncConfig?.owner || inferGitHubOwner();
   $("#cloudRepoInput").value = syncConfig?.repo || "baby-care-data";
   $("#cloudTokenInput").value = syncConfig?.token || "";
-  $("#cloudPassphraseInput").value = syncConfig?.passphrase || "";
   $("#cloudDisconnectButton").hidden = !connected;
   $("#cloudSyncNowButton").hidden = !connected;
   $("#cloudConnectButton").textContent = connected ? "更新配置并同步" : "连接并首次同步";
@@ -557,50 +558,6 @@ function bytesToBase64(bytes) {
 function base64ToBytes(value) {
   const binary = atob(String(value).replace(/\s/g, ""));
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
-async function deriveEncryptionKey(passphrase, salt, iterations) {
-  if (!window.crypto?.subtle) throw new Error("secure-context-required");
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
-    material,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
-}
-
-async function encryptCloudPayload(payload, passphrase) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const iterations = 180000;
-  const key = await deriveEncryptionKey(passphrase, salt, iterations);
-  const plain = new TextEncoder().encode(JSON.stringify(payload));
-  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain));
-  return JSON.stringify({
-    app: "宝宝照护日记",
-    version: 1,
-    encrypted: true,
-    algorithm: "AES-GCM",
-    iterations,
-    salt: bytesToBase64(salt),
-    iv: bytesToBase64(iv),
-    data: bytesToBase64(encrypted),
-  });
-}
-
-async function decryptCloudPayload(envelope, passphrase) {
-  try {
-    if (!envelope?.encrypted || envelope.algorithm !== "AES-GCM") throw new Error("invalid-encrypted-data");
-    const salt = base64ToBytes(envelope.salt);
-    const iv = base64ToBytes(envelope.iv);
-    const key = await deriveEncryptionKey(passphrase, salt, Number(envelope.iterations) || 180000);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, base64ToBytes(envelope.data));
-    return JSON.parse(new TextDecoder().decode(decrypted));
-  } catch {
-    throw new Error("wrong-sync-passphrase");
-  }
 }
 
 function githubHeaders(config) {
@@ -642,8 +599,12 @@ async function readCloudSnapshot(config) {
   if (response.status === 404) return { sha: null, records: [], deletedRecords: {} };
   if (!response.ok) throw new Error("github-api-error");
   const file = await response.json();
-  const envelope = JSON.parse(new TextDecoder().decode(base64ToBytes(file.content)));
-  const payload = await decryptCloudPayload(envelope, config.passphrase);
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64ToBytes(file.content)));
+  } catch {
+    throw new Error("invalid-cloud-data");
+  }
   return {
     sha: file.sha,
     records: Array.isArray(payload.records) ? payload.records : [],
@@ -677,16 +638,17 @@ function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords) {
 }
 
 async function writeCloudSnapshot(config, sha) {
-  const encrypted = await encryptCloudPayload({
+  const payload = JSON.stringify({
     app: "宝宝照护日记",
     version: 2,
     syncedAt: new Date().toISOString(),
+    recordCount: records.length,
     records,
     deletedRecords,
-  }, config.passphrase);
+  }, null, 2);
   const body = {
     message: "Sync baby care records",
-    content: bytesToBase64(new TextEncoder().encode(encrypted)),
+    content: bytesToBase64(new TextEncoder().encode(payload)),
     branch: "main",
   };
   if (sha) body.sha = sha;
@@ -706,8 +668,7 @@ function cloudErrorMessage(error) {
     "github-network-error": "当前浏览器无法连接 GitHub API，请检查网络后重试",
     "github-api-error": "GitHub API 返回异常，请稍后重试",
     "github-sync-conflict": "云端刚被其他设备更新，请再次同步",
-    "wrong-sync-passphrase": "同步密码不正确，无法解密云端数据",
-    "secure-context-required": "请通过 HTTPS 页面使用云同步",
+    "invalid-cloud-data": "云端数据文件不是有效的宝宝照护 JSON",
   };
   return messages[error?.message] || "网络或 GitHub 服务暂时不可用";
 }
@@ -733,7 +694,7 @@ async function syncWithCloud({ silent = false } = {}) {
     if (!completed) throw new Error("github-sync-conflict");
     lastCloudSyncAt = Date.now();
     render();
-    setCloudSyncState("synced", `共 ${records.length} 条 · 已加密保存至 ${syncConfig.owner}/${syncConfig.repo}`);
+    setCloudSyncState("synced", `共 ${records.length} 条 · 已保存至 ${syncConfig.owner}/${syncConfig.repo}`);
     if (!silent) showToast(`云同步完成 · 共 ${records.length} 条记录`);
   } catch (error) {
     const message = cloudErrorMessage(error);
@@ -752,11 +713,9 @@ async function connectCloudSync() {
   const owner = $("#cloudOwnerInput").value.trim();
   const repo = $("#cloudRepoInput").value.trim();
   const token = $("#cloudTokenInput").value.trim();
-  const passphrase = $("#cloudPassphraseInput").value;
   if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo)) return showToast("请正确填写 GitHub 用户名和仓库名");
   if (token.length < 20) return showToast("请填写该私有仓库的访问令牌");
-  if (passphrase.length < 8) return showToast("同步密码至少需要 8 个字符");
-  syncConfig = { owner, repo, token, passphrase };
+  syncConfig = { owner, repo, token };
   localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(syncConfig));
   cloudSyncState = "waiting";
   renderCloudSyncPanel();

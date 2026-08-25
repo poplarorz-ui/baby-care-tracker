@@ -609,8 +609,14 @@ function githubHeaders(config) {
 }
 
 async function githubRequest(url, config, options = {}) {
-  const response = await fetch(url, { ...options, headers: { ...githubHeaders(config), ...(options.headers || {}) } });
+  let response;
+  try {
+    response = await fetch(url, { ...options, headers: { ...githubHeaders(config), ...(options.headers || {}) } });
+  } catch {
+    throw new Error("github-network-error");
+  }
   if (response.status === 401) throw new Error("github-unauthorized");
+  if (response.status === 403) throw new Error("github-forbidden");
   return response;
 }
 
@@ -691,8 +697,12 @@ async function writeCloudSnapshot(config, sha) {
 function cloudErrorMessage(error) {
   const messages = {
     "github-unauthorized": "令牌无效或已过期",
+    "github-forbidden": "GitHub 拒绝写入，请确认令牌只选中了 baby-care-data 且 Contents 为 Read and write",
     "github-repository-unavailable": "找不到数据仓库，或令牌没有访问权限",
     "github-repository-must-be-private": "为保护隐私，数据仓库必须设为 Private",
+    "github-network-error": "当前浏览器无法连接 GitHub API，请检查网络后重试",
+    "github-api-error": "GitHub API 返回异常，请稍后重试",
+    "github-sync-conflict": "云端刚被其他设备更新，请再次同步",
     "wrong-sync-passphrase": "同步密码不正确，无法解密云端数据",
     "secure-context-required": "请通过 HTTPS 页面使用云同步",
   };

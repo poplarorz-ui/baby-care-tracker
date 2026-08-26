@@ -470,7 +470,7 @@ function timelineItem(record, index) {
     value = record.duration ? `${record.duration} 分钟` : "已洗澡";
     detail = `${record.waterTemp ? `水温 ${record.waterTemp}℃` : ""}${record.note ? `${record.waterTemp ? " · " : ""}${record.note}` : ""}`;
   }
-  const interval = previous ? `<span class="interval-pill">⏱ 距上次 ${formatInterval(timestamp - previousTime)}</span>` : `<span class="interval-pill first">首次记录</span>`;
+  const interval = previous ? `<span class="interval-pill">距上次 ${formatInterval(timestamp - previousTime)}</span>` : `<span class="interval-pill first">首次记录</span>`;
   return `<article class="timeline-item ${record.type}" style="animation-delay:${Math.min(index * 30, 180)}ms">
     <div class="timeline-dot">${meta.icon}</div>
     <div class="timeline-content"><div class="timeline-main"><strong>${escapeHtml(title)}</strong><b>${escapeHtml(value)}</b><time>${formatTime(timestamp)}</time></div>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</div>

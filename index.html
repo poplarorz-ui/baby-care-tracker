@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#fff8f3" />
     <meta name="description" content="简单好用的宝宝吃奶、排泄与蓝光照护记录工具" />
     <title>宝宝照护日记</title>
-    <link rel="stylesheet" href="styles.css?v=20260826-6" />
+    <link rel="stylesheet" href="styles.css?v=20260826-7" />
   </head>
   <body>
     <div class="page-shell">
@@ -23,6 +23,10 @@
 
       <main>
         <section class="welcome-card" aria-label="日期和宝宝档案">
+          <button class="profile-identity" id="profileEditButton" type="button" aria-label="编辑宝宝档案">
+            <span class="profile-avatar" aria-hidden="true">👶</span>
+            <div><p><strong id="babyProfileTitle"><span id="babyName">设置宝宝档案</span></strong><b id="babyAge">未设置出生时间</b></p><small id="babyBirth">点击填写姓名和出生时间</small></div>
+          </button>
           <div class="date-toolbar welcome-date-toolbar" aria-label="选择查看日期">
             <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
             <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
@@ -32,10 +36,6 @@
             <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
             <button class="today-button" id="todayButton" type="button" aria-label="回到今天">今天</button>
           </div>
-          <button class="profile-identity" id="profileEditButton" type="button" aria-label="编辑宝宝档案">
-            <span class="profile-avatar" aria-hidden="true">👶</span>
-            <div><p><strong id="babyProfileTitle"><span id="babyName">设置宝宝档案</span></strong><b id="babyAge">未设置出生时间</b></p><small id="babyBirth">点击填写姓名和出生时间</small></div>
-          </button>
         </section>
 
         <section class="baby-profile" aria-label="宝宝健康记录">
@@ -120,24 +120,20 @@
           <div class="summary-grid">
             <article class="summary-card feeding-summary">
               <div class="summary-icon">🍼</div><small>吃奶</small>
-              <strong><span id="feedingCount">0</span> <i>次</i></strong>
-              <p>共 <b id="feedingAmount">0 ml</b></p>
+              <div class="summary-mainline"><strong><span id="feedingCount">0</span> <i>次</i></strong><p>共 <b id="feedingAmount">0 ml</b></p></div>
               <div class="summary-detail"><span>奶粉 <b id="formulaStats">0次 · 0ml</b></span><span>母乳 <b id="breastStats">0次 · 0ml</b></span></div>
             </article>
             <article class="summary-card poop-summary">
               <div class="summary-icon">💩</div><small>大便</small>
-              <strong><span id="poopCount">0</span> <i>次</i></strong>
-              <p id="poopDetail">今天还没有记录</p>
+              <div class="summary-mainline"><strong><span id="poopCount">0</span> <i>次</i></strong><p id="poopDetail">今天还没有记录</p></div>
             </article>
             <article class="summary-card pee-summary">
               <div class="summary-icon">💧</div><small>小便</small>
-              <strong><span id="peeCount">0</span> <i>次</i></strong>
-              <p id="peeDetail">今天还没有记录</p>
+              <div class="summary-mainline"><strong><span id="peeCount">0</span> <i>次</i></strong><p id="peeDetail">今天还没有记录</p></div>
             </article>
             <article class="summary-card light-summary">
               <div class="summary-icon">☀️</div><small>蓝光累计</small>
-              <strong id="lightDuration">0分钟</strong>
-              <p>共 <b id="lightCount">0 次</b></p>
+              <div class="summary-mainline"><strong id="lightDuration">0分钟</strong><p>共 <b id="lightCount">0 次</b></p></div>
             </article>
           </div>
         </section>
@@ -317,6 +313,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260826-6"></script>
+    <script src="app.js?v=20260826-7"></script>
   </body>
 </html>

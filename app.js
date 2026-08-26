@@ -9,7 +9,7 @@ const typeMeta = {
   feeding: { title: "记录吃奶", icon: "🍼", label: "吃奶", color: "var(--peach-soft)" },
   poop: { title: "记录大便", icon: "💩", label: "大便", color: "var(--yellow-soft)" },
   pee: { title: "记录小便", icon: "💧", label: "小便", color: "var(--blue-soft)" },
-  light: { title: "记录蓝光", icon: "☀️", label: "照蓝光", color: "var(--violet-soft)" },
+  light: { title: "记录兰光", icon: "☀️", label: "照兰光", color: "var(--violet-soft)" },
   bath: { title: "记录洗澡", icon: "🛁", label: "洗澡", color: "#e9f7fb" },
   growth: { title: "记录身高体重", icon: "📏", label: "身高体重", color: "#eaf7f0" },
   jaundice: { title: "记录黄疸数值", icon: "🟡", label: "黄疸", color: "#fff7d9" },
@@ -33,7 +33,7 @@ let cloudSyncQueued = false;
 let cloudSyncState = syncConfig ? "waiting" : "off";
 let cloudSyncDetail = "";
 let lastCloudSyncAt = null;
-let editingActiveLightId = null;
+let editingRecordId = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -156,6 +156,50 @@ function recordTouchesDay(record, start, end) {
 function dailyLightMs(record, dayStart, dayEnd) {
   const end = record.end || Date.now();
   return Math.max(0, Math.min(end, dayEnd) - Math.max(record.start, dayStart));
+}
+
+const DEFAULT_LIGHT_COURSE_MINUTES = 12 * 60;
+
+function lightCourseId(record) {
+  return record.courseId || "legacy-course";
+}
+
+function getLightCourses() {
+  const groups = new Map();
+  records.filter((record) => record.type === "light").forEach((record) => {
+    const id = lightCourseId(record);
+    if (!groups.has(id)) groups.set(id, { id, records: [], startedAt: Number(record.start), ended: false, targetMinutes: DEFAULT_LIGHT_COURSE_MINUTES });
+    const course = groups.get(id);
+    course.records.push(record);
+    course.startedAt = Math.min(course.startedAt, Number(record.start));
+    course.ended = course.ended || Boolean(record.courseEnd);
+    const target = Number(record.courseTargetMinutes);
+    if (Number.isFinite(target) && target > 0) course.targetMinutes = target;
+  });
+  const courses = [...groups.values()].sort((a, b) => a.startedAt - b.startedAt);
+  courses.forEach((course, index) => {
+    course.records.sort((a, b) => a.start - b.start);
+    course.lastAt = Math.max(...course.records.map((record) => Number(record.end) || Number(record.start)));
+    course.activeLight = course.records.find((record) => !record.end) || null;
+    course.inferredEnded = course.ended || index < courses.length - 1;
+    course.totalMs = course.records.reduce((total, record) => total + Math.max(0, (Number(record.end) || Date.now()) - Number(record.start)), 0);
+  });
+  return courses;
+}
+
+function getCurrentLightCourse() {
+  const courses = getLightCourses();
+  return courses[courses.length - 1] || null;
+}
+
+function getActiveLightCourse() {
+  const course = getCurrentLightCourse();
+  return course && !course.inferredEnded ? course : null;
+}
+
+function lightCourseTargetLabel(minutes) {
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? `${hours}小时` : `${hours.toFixed(1)}小时`;
 }
 
 function render() {
@@ -283,8 +327,7 @@ function renderSummary() {
   const sumAmount = (items) => items.reduce((total, item) => total + (Number(item.amount) || 0), 0);
   const poops = daily.filter((record) => record.type === "poop");
   const pees = daily.filter((record) => record.type === "pee");
-  const lights = daily.filter((record) => record.type === "light");
-  const lightMs = lights.reduce((total, record) => total + dailyLightMs(record, start, end), 0);
+  const lightCourse = getCurrentLightCourse();
 
   $("#feedingCount").textContent = feedings.length;
   $("#feedingAmount").textContent = `${sumAmount(feedings)} ml`;
@@ -292,8 +335,8 @@ function renderSummary() {
   $("#formulaStats").textContent = `${formula.length}次 · ${sumAmount(formula)}ml`;
   $("#poopCount").textContent = poops.length;
   $("#peeCount").textContent = pees.length;
-  $("#lightDuration").textContent = formatDuration(lightMs, true);
-  $("#lightCount").textContent = `${lights.length}次`;
+  $("#lightDuration").textContent = lightCourse ? formatDuration(lightCourse.totalMs, true) : "0分钟";
+  $("#lightCount").textContent = lightCourse ? `${lightCourse.records.length}段 · 目标${lightCourseTargetLabel(lightCourse.targetMinutes)}` : "0段";
   renderElapsedSummaries();
 }
 
@@ -307,13 +350,15 @@ function renderElapsedSummaries() {
   const now = Date.now();
   const latestPoop = latestRecord("poop");
   const latestPee = latestRecord("pee");
-  const activeLight = records.find((record) => record.type === "light" && !record.end);
-  const latestStoppedLight = latestRecord("light", "end", (record) => Boolean(record.end));
+  const course = getCurrentLightCourse();
+  const activeLight = course?.activeLight;
+  const latestStoppedLight = course ? [...course.records].filter((record) => record.end).sort((a, b) => b.end - a.end)[0] : null;
   $("#poopDetail").textContent = latestPoop ? `距上次 ${formatInterval(Math.max(0, now - latestPoop.time))}` : "暂无大便记录";
   $("#peeDetail").textContent = latestPee ? `距上次 ${formatInterval(Math.max(0, now - latestPee.time))}` : "暂无小便记录";
   $("#lightStopDetail").textContent = activeLight
-    ? " · 正在照蓝光"
-    : latestStoppedLight ? ` · 已停止 ${formatInterval(Math.max(0, now - latestStoppedLight.end))}` : " · 暂无结束记录";
+    ? " · 正在照兰光"
+    : course?.inferredEnded ? " · 疗程已结束"
+    : latestStoppedLight ? ` · 已暂停 ${formatInterval(Math.max(0, now - latestStoppedLight.end))}` : " · 暂无疗程记录";
 }
 
 function formatCountdown(ms) {
@@ -416,16 +461,16 @@ function renderDayTimeline() {
     const right = chartPosition(clippedEnd, start, end);
     const labelStart = record.start < start ? "00:00" : formatTime(record.start);
     const labelEnd = recordEnd > end ? "24:00" : formatTime(recordEnd);
-    const description = `蓝光 ${labelStart}至${labelEnd}，${formatDuration(clippedEnd - clippedStart)}`;
+    const description = `兰光 ${labelStart}至${labelEnd}，${formatDuration(clippedEnd - clippedStart)}`;
     return `<span class="light-period ${!record.end ? "active" : ""} ${left < 5 ? "edge-start" : right > 95 ? "edge-end" : ""}" style="--start:${left.toFixed(3)}%;--width:${Math.max(0, right - left).toFixed(3)}%" role="button" tabindex="0" aria-label="${escapeHtml(description)}" data-tooltip="${escapeHtml(description)}"></span>`;
   }).join("");
   const empty = `<span class="lane-empty">暂无</span>`;
-  const summary = `当天吃奶${feedings.length}次，排泄${outputs.length}次，蓝光${lights.length}段`;
+  const summary = `当天吃奶${feedings.length}次，排泄${outputs.length}次，兰光${lights.length}段`;
   $("#dayTimeline").setAttribute("aria-label", summary);
   $("#dayTimeline").innerHTML = `<div class="chart-grid" aria-hidden="true">${grid}${nowIndicator}</div>
     <div class="chart-lane feeding-lane"><strong class="lane-name"><span>🍼</span>吃奶</strong><div class="lane-track">${feedingGaps}${feedingMarks || empty}</div></div>
     <div class="chart-lane output-lane"><strong class="lane-name"><span>💧</span>排泄</strong><div class="lane-track">${outputMarks || empty}</div></div>
-    <div class="chart-lane light-lane"><strong class="lane-name"><span>☀</span>蓝光</strong><div class="lane-track">${lightPeriods || empty}</div></div>
+    <div class="chart-lane light-lane"><strong class="lane-name"><span>☀</span>兰光</strong><div class="lane-track">${lightPeriods || empty}</div></div>
     <div class="time-axis" aria-hidden="true">${axis}</div>`;
 }
 
@@ -468,7 +513,8 @@ function timelineItem(record, index) {
     value = amountNames[record.amount] || "中量";
   } else if (record.type === "light") {
     value = record.end ? formatDuration(record.end - record.start) : "进行中";
-    detail = `${formatTime(record.start)} 开始${record.end ? ` · ${formatTime(record.end)} 结束` : ""}${record.note ? ` · ${record.note}` : ""}`;
+    const courseFlags = [record.courseStart ? "疗程开始" : "", record.courseEnd ? "疗程结束" : ""].filter(Boolean).join(" · ");
+    detail = `${formatTime(record.start)} 开始${record.end ? ` · ${formatTime(record.end)} 结束` : ""}${courseFlags ? ` · ${courseFlags}` : ""}${record.note ? ` · ${record.note}` : ""}`;
   } else if (record.type === "growth") {
     value = [record.height ? `${record.height}cm` : "", record.weight ? `${record.weight}kg` : ""].filter(Boolean).join(" · ");
   } else if (record.type === "jaundice") {
@@ -485,7 +531,7 @@ function timelineItem(record, index) {
   return `<article class="timeline-item ${record.type}" style="animation-delay:${Math.min(index * 30, 180)}ms">
     <div class="timeline-dot">${meta.icon}</div>
     <div class="timeline-content"><div class="timeline-main"><strong>${escapeHtml(title)}</strong><b>${escapeHtml(value)}</b><time>${formatTime(timestamp)}</time></div>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</div>
-    <div class="timeline-actions">${interval}<button class="delete-button" data-delete="${record.id}" type="button" aria-label="删除这条记录" title="删除">×</button></div>
+    <div class="timeline-actions">${interval}<button class="edit-button" data-edit="${record.id}" type="button" aria-label="编辑这条记录" title="编辑">编辑</button><button class="delete-button" data-delete="${record.id}" type="button" aria-label="删除这条记录" title="删除">×</button></div>
   </article>`;
 }
 
@@ -502,9 +548,24 @@ function renderActiveLight() {
   if (!timerId) timerId = setInterval(() => { update(); renderSummary(); }, 1000);
 }
 
-function openModal(type) {
+function setRadioValue(name, value) {
+  const input = document.querySelector(`input[name="${name}"][value="${CSS.escape(String(value))}"]`);
+  if (input) input.checked = true;
+}
+
+function updateCourseOptions() {
+  const startsCourse = $("#lightCourseStartInput").checked;
+  const hasEnd = Boolean($("#lightEndTimeInput").value);
+  $("#lightCourseTargetField").hidden = !startsCourse;
+  $("#lightCourseEndInput").disabled = !hasEnd;
+  if (!hasEnd) $("#lightCourseEndInput").checked = false;
+}
+
+function openModal(type, recordToEdit = null) {
   const meta = typeMeta[type];
-  editingActiveLightId = null;
+  let target = recordToEdit;
+  if (!target && type === "light") target = records.find((item) => item.type === "light" && !item.end) || null;
+  editingRecordId = target?.id || null;
   $("#recordForm").reset();
   $("#recordType").value = type;
   $("#modalTitle").textContent = meta.title;
@@ -527,18 +588,50 @@ function openModal(type) {
   setDateTimeFields("lightEnd", new Date(), false);
   $("#durationPreview").classList.add("ongoing");
   $("#durationPreview").innerHTML = "<span>●</span> 未填结束时间，将保存为“正在进行”";
-  $("#submitButton").textContent = type === "light" ? "保存蓝光记录" : "保存记录";
+  $("#submitButton").textContent = type === "light" ? "保存兰光记录" : "保存记录";
 
-  const activeLight = type === "light" ? records.find((item) => item.type === "light" && !item.end) : null;
-  if (activeLight) {
-    editingActiveLightId = activeLight.id;
-    $("#modalTitle").textContent = "结束蓝光";
-    setDateTimeFields("lightStart", new Date(activeLight.start));
-    setDateTimeFields("lightEnd");
-    $("#noteInput").value = activeLight.note || "";
-    $("#submitButton").textContent = "保存结束时间";
-    updateDurationPreview();
+  if (type === "light") {
+    const activeCourse = getActiveLightCourse();
+    $("#lightCourseStartInput").checked = !activeCourse;
+    $("#lightCourseTargetInput").value = 12;
   }
+
+  if (target) {
+    $("#modalTitle").textContent = target.type === "light" && !target.end ? "结束兰光" : `编辑${meta.label}记录`;
+    $("#submitButton").textContent = target.type === "light" && !target.end ? "保存结束时间" : "保存修改";
+    $("#noteInput").value = target.note || "";
+    if (type === "light") {
+      setDateTimeFields("lightStart", new Date(target.start));
+      if (target.end) setDateTimeFields("lightEnd", new Date(target.end));
+      else setDateTimeFields("lightEnd");
+      const course = getLightCourses().find((item) => item.id === lightCourseId(target));
+      $("#lightCourseStartInput").checked = Boolean(target.courseStart);
+      $("#lightCourseEndInput").checked = Boolean(target.courseEnd);
+      $("#lightCourseTargetInput").value = ((Number(target.courseTargetMinutes) || course?.targetMinutes || DEFAULT_LIGHT_COURSE_MINUTES) / 60).toString();
+    } else {
+      setDateTimeFields("event", new Date(target.time));
+      if (type === "feeding") {
+        setRadioValue("feedingType", target.feedingType);
+        $("#feedingAmountInput").value = target.amount;
+      } else if (type === "poop" || type === "pee") setRadioValue("outputAmount", target.amount);
+      else if (type === "growth") {
+        $("#heightInput").value = target.height ?? "";
+        $("#weightInput").value = target.weight ?? "";
+      } else if (type === "jaundice") {
+        $("#jaundiceValueInput").value = target.value;
+        setRadioValue("jaundiceUnit", target.unit);
+      } else if (type === "vaccine") {
+        $("#vaccineNameInput").value = target.vaccineName || "";
+        $("#vaccineDoseInput").value = target.dose || "";
+        $("#nextVaccineDateInput").value = target.nextDate || "";
+      } else if (type === "bath") {
+        $("#bathDurationInput").value = target.duration ?? "";
+        $("#bathWaterTempInput").value = target.waterTemp ?? "";
+      }
+    }
+  }
+  updateCourseOptions();
+  if (type === "light") updateDurationPreview();
   $("#modalBackdrop").hidden = false;
   document.body.style.overflow = "hidden";
   const focusTarget = type === "feeding" ? $("#feedingAmountInput")
@@ -546,7 +639,7 @@ function openModal(type) {
     : type === "jaundice" ? $("#jaundiceValueInput")
     : type === "vaccine" ? $("#vaccineNameInput")
     : type === "bath" ? $("#bathDurationInput")
-    : type === "light" && activeLight ? $("#lightEndTimeInput")
+    : type === "light" && target && !target.end ? $("#lightEndTimeInput")
     : type === "light" ? $("#lightStartTimeInput")
     : $("#eventTimeInput");
   setTimeout(() => focusTarget.focus(), 50);
@@ -555,7 +648,12 @@ function openModal(type) {
 function closeModal() {
   $("#modalBackdrop").hidden = true;
   document.body.style.overflow = "";
-  editingActiveLightId = null;
+  editingRecordId = null;
+}
+
+function editRecord(id) {
+  const record = records.find((item) => item.id === id);
+  if (record) openModal(record.type, record);
 }
 
 function openProfileModal() {
@@ -591,7 +689,9 @@ function submitRecord(event) {
   const type = $("#recordType").value;
   const note = $("#noteInput").value.trim();
   const now = Date.now();
-  const base = { id: `${now}-${Math.random().toString(16).slice(2)}`, type, note, createdAt: now, updatedAt: now };
+  const existingRecord = editingRecordId ? records.find((item) => item.id === editingRecordId) : null;
+  if (editingRecordId && !existingRecord) return showToast("未找到要编辑的记录");
+  const base = { id: existingRecord?.id || `${now}-${Math.random().toString(16).slice(2)}`, type, note, createdAt: existingRecord?.createdAt || now, updatedAt: now };
   let record;
   if (type === "feeding") {
     const amount = Number($("#feedingAmountInput").value);
@@ -643,25 +743,35 @@ function submitRecord(event) {
     const start = parseDateTime($("#lightStartDateInput").value, $("#lightStartTimeInput").value);
     const endTimeValue = $("#lightEndTimeInput").value;
     const end = endTimeValue ? parseDateTime($("#lightEndDateInput").value, endTimeValue) : null;
-    if (!Number.isFinite(start)) return showToast("请正确填写蓝光开始时间");
-    if (endTimeValue && !Number.isFinite(end)) return showToast("请正确填写蓝光结束日期和时间");
+    if (!Number.isFinite(start)) return showToast("请正确填写兰光开始时间");
+    if (endTimeValue && !Number.isFinite(end)) return showToast("请正确填写兰光结束日期和时间");
     if (end && end <= start) return showToast("结束时间要晚于开始时间");
-    const existingActive = records.find((item) => item.type === "light" && !item.end && item.id !== editingActiveLightId);
-    if (!end && existingActive) return showToast("已有一段蓝光正在计时，请先结束");
-    if (editingActiveLightId) {
-      record = records.find((item) => item.id === editingActiveLightId);
-      if (!record) return showToast("未找到正在进行的蓝光记录");
-      Object.assign(record, { start, end, note, updatedAt: Date.now() });
-    } else {
-      record = { ...base, start, end };
+    const existingActive = records.find((item) => item.type === "light" && !item.end && item.id !== editingRecordId);
+    if (!end && existingActive) return showToast("已有一段兰光正在计时，请先结束");
+    let courseStart = $("#lightCourseStartInput").checked;
+    const courseEnd = Boolean(end) && $("#lightCourseEndInput").checked;
+    const activeCourse = getActiveLightCourse();
+    let courseId;
+    if (courseStart) courseId = existingRecord?.courseStart && existingRecord.courseId ? existingRecord.courseId : `course-${now}-${Math.random().toString(16).slice(2)}`;
+    else courseId = existingRecord ? lightCourseId(existingRecord) : activeCourse?.id;
+    if (!courseId) {
+      courseStart = true;
+      courseId = `course-${now}-${Math.random().toString(16).slice(2)}`;
     }
+    const targetHours = Number($("#lightCourseTargetInput").value);
+    if (courseStart && (!Number.isFinite(targetHours) || targetHours <= 0)) return showToast("请正确填写疗程目标时长");
+    const courseTargetMinutes = courseStart
+      ? Math.round(targetHours * 60)
+      : Number(existingRecord?.courseTargetMinutes) || activeCourse?.targetMinutes || DEFAULT_LIGHT_COURSE_MINUTES;
+    record = { ...base, start, end, courseId, courseStart, courseEnd, courseTargetMinutes };
   }
-  if (!editingActiveLightId) records.push(record);
+  if (existingRecord) Object.assign(existingRecord, record);
+  else records.push(record);
   saveRecords();
   selectedDate = dateKey(new Date(type === "light" ? record.start : record.time));
   closeModal();
   render();
-  showToast(type === "light" && !record.end ? "蓝光计时已开始，并已保存" : "记录已保存到历史数据", true);
+  showToast(existingRecord ? "记录已更新并保存" : type === "light" && !record.end ? "兰光计时已开始，并已保存" : "记录已保存到历史数据", true);
 }
 
 function updateDurationPreview() {
@@ -672,7 +782,7 @@ function updateDurationPreview() {
   preview.classList.toggle("ongoing", !endTimeValue);
   if (!endTimeValue) { preview.innerHTML = "<span>●</span> 未填结束时间，将保存为“正在进行”"; return; }
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) { preview.textContent = "结束时间需要晚于开始时间"; return; }
-  preview.textContent = `本次蓝光时长：${formatDuration(end - start)}`;
+  preview.textContent = `本次兰光时长：${formatDuration(end - start)}`;
 }
 
 function stopActiveLight() {
@@ -683,7 +793,7 @@ function stopActiveLight() {
   saveRecords();
   clearInterval(timerId); timerId = undefined;
   render();
-  showToast(`蓝光已结束并保存 · 本次 ${formatDuration(active.end - active.start)}`, true);
+  showToast(`兰光已结束并保存 · 本次 ${formatDuration(active.end - active.start)}`, true);
 }
 
 function changeDay(delta) {
@@ -704,7 +814,7 @@ function deleteRecord(id) {
 }
 
 function buildExportPayload() {
-  return { app: "宝宝照护日记", version: 2, exportedAt: new Date().toISOString(), profile: babyProfile, recordCount: records.length, records };
+  return { app: "宝宝照护日记", version: 3, exportedAt: new Date().toISOString(), profile: babyProfile, recordCount: records.length, records };
 }
 
 function setCloudSyncState(state, detail = "") {
@@ -844,7 +954,7 @@ function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords, remoteProfile) 
 async function writeCloudSnapshot(config, sha) {
   const payload = JSON.stringify({
     app: "宝宝照护日记",
-    version: 2,
+    version: 3,
     syncedAt: new Date().toISOString(),
     profile: babyProfile,
     recordCount: records.length,
@@ -1045,7 +1155,17 @@ function normalizeImportedRecord(item, index) {
   const start = Number(item.start);
   const end = item.end === null || item.end === undefined ? null : Number(item.end);
   if (!Number.isFinite(start) || (end !== null && (!Number.isFinite(end) || end <= start))) return null;
-  return { ...base, start, end };
+  const courseId = typeof item.courseId === "string" && /^[\w-]{1,100}$/.test(item.courseId) ? item.courseId : undefined;
+  const target = Number(item.courseTargetMinutes);
+  return {
+    ...base,
+    start,
+    end,
+    ...(courseId ? { courseId } : {}),
+    courseStart: Boolean(item.courseStart),
+    courseEnd: Boolean(item.courseEnd) && Boolean(end),
+    courseTargetMinutes: Number.isFinite(target) && target > 0 ? target : DEFAULT_LIGHT_COURSE_MINUTES,
+  };
 }
 
 async function importRecords(event) {
@@ -1132,11 +1252,17 @@ $("#dateDisplay").addEventListener("click", () => { try { $("#datePicker").showP
 $("#datePicker").addEventListener("change", (event) => { if (event.target.value) { selectedDate = event.target.value; render(); } });
 $("#stopLightButton").addEventListener("click", stopActiveLight);
 $("#exportButton").addEventListener("click", exportRecords);
-$$('#lightStartDateInput, #lightStartTimeInput, #lightEndDateInput, #lightEndTimeInput').forEach((input) => input.addEventListener("input", updateDurationPreview));
+$$('#lightStartDateInput, #lightStartTimeInput, #lightEndDateInput, #lightEndTimeInput').forEach((input) => input.addEventListener("input", () => { updateDurationPreview(); updateCourseOptions(); }));
+$("#lightCourseStartInput").addEventListener("change", updateCourseOptions);
 $$('[data-now-for]').forEach((button) => button.addEventListener("click", () => { setDateTimeFields(button.dataset.nowFor); updateDurationPreview(); }));
 $$('[data-amount]').forEach((button) => button.addEventListener("click", () => { $("#feedingAmountInput").value = button.dataset.amount; }));
 $$('[data-filter]').forEach((button) => button.addEventListener("click", () => { activeFilter = button.dataset.filter; $$('[data-filter]').forEach((item) => item.classList.toggle("active", item === button)); renderTimeline(); }));
-$("#timeline").addEventListener("click", (event) => { const button = event.target.closest("[data-delete]"); if (button) deleteRecord(button.dataset.delete); });
+$("#timeline").addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-edit]");
+  if (editButton) return editRecord(editButton.dataset.edit);
+  const deleteButton = event.target.closest("[data-delete]");
+  if (deleteButton) deleteRecord(deleteButton.dataset.delete);
+});
 window.addEventListener("storage", (event) => { if (event.key === STORAGE_KEY || event.key === PROFILE_KEY) syncHistoryFromStorage(true); });
 window.addEventListener("pageshow", () => syncHistoryFromStorage(false));
 document.addEventListener("visibilitychange", () => { if (!document.hidden) syncHistoryFromStorage(false); });

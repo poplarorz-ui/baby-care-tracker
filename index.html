@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#fff8f3" />
     <meta name="description" content="简单好用的宝宝吃奶、排泄与蓝光照护记录工具" />
     <title>宝宝照护日记</title>
-    <link rel="stylesheet" href="styles.css?v=20260826-4" />
+    <link rel="stylesheet" href="styles.css?v=20260826-5" />
   </head>
   <body>
     <div class="page-shell">
@@ -24,7 +24,15 @@
       <main>
         <section class="welcome-card" aria-labelledby="welcomeTitle">
           <div>
-            <p class="eyebrow" id="todayLabel">今天 · 宝宝的第一个温柔日常</p>
+            <div class="date-toolbar welcome-date-toolbar" aria-label="选择查看日期">
+              <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
+              <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
+                <span id="datePrimary">今天</span><small id="dateSecondary"></small>
+              </button>
+              <input class="hidden-date" id="datePicker" type="date" />
+              <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
+              <button class="today-button" id="todayButton" type="button" aria-label="回到今天">今天</button>
+            </div>
             <h1 id="welcomeTitle">嗨，今天也辛苦啦 <span aria-hidden="true">👋</span></h1>
             <p>吃饱、睡好、舒舒服服长大。</p>
           </div>
@@ -51,16 +59,6 @@
               <small>💉 下次疫苗</small><strong id="nextVaccineDate">待安排</strong><em id="nextVaccineName">点击记录疫苗与下次时间</em>
             </button>
           </div>
-        </section>
-
-        <section class="date-toolbar" aria-label="选择查看日期">
-          <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
-          <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
-            <span id="datePrimary">今天</span><small id="dateSecondary"></small>
-          </button>
-          <input class="hidden-date" id="datePicker" type="date" />
-          <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
-          <button class="today-button" id="todayButton" type="button">回到今天</button>
         </section>
 
         <section aria-labelledby="quickTitle">
@@ -327,6 +325,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260826-4"></script>
+    <script src="app.js?v=20260826-5"></script>
   </body>
 </html>

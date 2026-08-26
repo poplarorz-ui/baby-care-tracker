@@ -187,12 +187,11 @@ function renderDate() {
   const today = dateKey(new Date());
   const diff = Math.round((new Date(`${selectedDate}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
   $("#datePrimary").textContent = diff === 0 ? "今天" : diff === -1 ? "昨天" : diff === 1 ? "明天" : `${selected.getMonth() + 1}月${selected.getDate()}日`;
-  $("#dateSecondary").textContent = `${selected.getFullYear()}年 · ${weekday(selected)}`;
+  $("#dateSecondary").textContent = `${selected.getMonth() + 1}月${selected.getDate()}日 · ${weekday(selected)}`;
   $("#summaryDate").textContent = `${selected.getMonth() + 1}月${selected.getDate()}日`;
   $("#timelineChartDate").textContent = `${selected.getMonth() + 1}月${selected.getDate()}日 · ${weekday(selected)}`;
   $("#datePicker").value = selectedDate;
   $("#todayButton").hidden = diff === 0;
-  $("#todayLabel").textContent = diff === 0 ? `今天 · ${selected.getMonth() + 1}月${selected.getDate()}日 ${weekday(selected)}` : `回看 · ${selected.getFullYear()}年${selected.getMonth() + 1}月${selected.getDate()}日`;
 }
 
 function formatBabyAge(now = Date.now()) {

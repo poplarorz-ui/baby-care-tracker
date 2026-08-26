@@ -1,14 +1,19 @@
 const STORAGE_KEY = "baby-care-tracker-records-v1";
 const DELETED_KEY = "baby-care-tracker-deleted-v1";
+const PROFILE_KEY = "baby-care-tracker-profile-v1";
 const SYNC_CONFIG_KEY = "baby-care-tracker-github-sync-v1";
 const CLOUD_OWNER = "poplarorz-ui";
 const CLOUD_REPO = "baby-care-data";
 const CLOUD_FILE_PATH = "宝宝照护记录.json";
 const typeMeta = {
-  feeding: { title: "记录吃奶", icon: "🍼", label: "吃奶" },
-  poop: { title: "记录大便", icon: "💩", label: "大便" },
-  pee: { title: "记录小便", icon: "💧", label: "小便" },
-  light: { title: "记录蓝光", icon: "☀️", label: "照蓝光" },
+  feeding: { title: "记录吃奶", icon: "🍼", label: "吃奶", color: "var(--peach-soft)" },
+  poop: { title: "记录大便", icon: "💩", label: "大便", color: "var(--yellow-soft)" },
+  pee: { title: "记录小便", icon: "💧", label: "小便", color: "var(--blue-soft)" },
+  light: { title: "记录蓝光", icon: "☀️", label: "照蓝光", color: "var(--violet-soft)" },
+  bath: { title: "记录洗澡", icon: "🛁", label: "洗澡", color: "#e9f7fb" },
+  growth: { title: "记录身高体重", icon: "📏", label: "身高体重", color: "#eaf7f0" },
+  jaundice: { title: "记录黄疸数值", icon: "🟡", label: "黄疸", color: "#fff7d9" },
+  vaccine: { title: "记录疫苗", icon: "💉", label: "疫苗", color: "#edf3ff" },
 };
 const amountNames = { small: "小量", medium: "中量", large: "大量" };
 const amountShort = { small: "小", medium: "中", large: "大" };
@@ -16,6 +21,7 @@ const FEEDING_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 let records = loadRecords();
 let deletedRecords = loadDeletedRecords();
+let babyProfile = loadProfile();
 let syncConfig = loadSyncConfig();
 let selectedDate = dateKey(new Date());
 let activeFilter = "all";
@@ -51,6 +57,22 @@ function loadDeletedRecords() {
   }
 }
 
+function normalizeProfile(value) {
+  if (!value || typeof value !== "object") return null;
+  const name = String(value.name || "").trim().slice(0, 30);
+  const birthAt = Number(value.birthAt);
+  if (!name || !Number.isFinite(birthAt) || birthAt <= 0) return null;
+  return { name, birthAt, updatedAt: Number(value.updatedAt) || 0 };
+}
+
+function loadProfile() {
+  try {
+    return normalizeProfile(JSON.parse(localStorage.getItem(PROFILE_KEY)));
+  } catch {
+    return null;
+  }
+}
+
 function loadSyncConfig() {
   try {
     const value = JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY));
@@ -65,6 +87,7 @@ function loadSyncConfig() {
 function saveRecords() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   localStorage.setItem(DELETED_KEY, JSON.stringify(deletedRecords));
+  if (babyProfile) localStorage.setItem(PROFILE_KEY, JSON.stringify(babyProfile));
   scheduleAutoBackup();
   scheduleCloudSync();
 }
@@ -138,6 +161,7 @@ function dailyLightMs(record, dayStart, dayEnd) {
 
 function render() {
   renderDate();
+  renderBabyProfile();
   renderFeedingCountdown();
   renderSummary();
   renderDayTimeline();
@@ -169,6 +193,68 @@ function renderDate() {
   $("#datePicker").value = selectedDate;
   $("#todayButton").hidden = diff === 0;
   $("#todayLabel").textContent = diff === 0 ? `今天 · ${selected.getMonth() + 1}月${selected.getDate()}日 ${weekday(selected)}` : `回看 · ${selected.getFullYear()}年${selected.getMonth() + 1}月${selected.getDate()}日`;
+}
+
+function formatBabyAge(now = Date.now()) {
+  if (!babyProfile?.birthAt) return "未设置出生时间";
+  const elapsed = Math.max(0, now - babyProfile.birthAt);
+  const totalHours = Math.floor(elapsed / 3600000);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days < 60) return `${days}天${hours ? `${hours}小时` : ""}`;
+  if (days < 365) return `${Math.floor(days / 30)}个月${days % 30 ? `${days % 30}天` : ""}`;
+  return `${Math.floor(days / 365)}岁${Math.floor((days % 365) / 30) ? `${Math.floor((days % 365) / 30)}个月` : ""}`;
+}
+
+function latestRecordWithValue(type, field) {
+  return records
+    .filter((record) => record.type === type && record[field] !== null && record[field] !== undefined && record[field] !== "")
+    .sort((a, b) => Number(b.time) - Number(a.time))[0];
+}
+
+function vaccineDateLabel(dateValue) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue || "")) return "待安排";
+  const date = new Date(`${dateValue}T00:00:00`);
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function vaccineCountdownLabel(dateValue) {
+  if (!dateValue) return "点击记录疫苗与下次时间";
+  const target = new Date(`${dateValue}T00:00:00`).getTime();
+  const today = new Date(`${dateKey(new Date())}T00:00:00`).getTime();
+  const days = Math.round((target - today) / 86400000);
+  if (days === 0) return "今天接种";
+  if (days > 0) return `还有 ${days} 天`;
+  return `已过 ${Math.abs(days)} 天`;
+}
+
+function renderBabyProfile() {
+  $("#babyName").textContent = babyProfile?.name || "设置宝宝档案";
+  $("#babyAge").textContent = formatBabyAge();
+  $("#babyBirth").textContent = babyProfile
+    ? `出生于 ${new Date(babyProfile.birthAt).getFullYear()}.${pad(new Date(babyProfile.birthAt).getMonth() + 1)}.${pad(new Date(babyProfile.birthAt).getDate())} ${formatTime(babyProfile.birthAt)}`
+    : "点击填写姓名和出生时间";
+
+  const heightRecord = latestRecordWithValue("growth", "height");
+  const weightRecord = latestRecordWithValue("growth", "weight");
+  $("#latestHeight").textContent = heightRecord ? `${heightRecord.height}cm` : "--cm";
+  $("#latestWeight").textContent = weightRecord ? `${weightRecord.weight}kg` : "--kg";
+  const growthTime = Math.max(Number(heightRecord?.time) || 0, Number(weightRecord?.time) || 0);
+  $("#latestGrowthTime").textContent = growthTime ? `${formatMonthDay(growthTime)}记录` : "点击记录";
+
+  const jaundice = latestRecordWithValue("jaundice", "value");
+  $("#latestJaundice").textContent = jaundice ? `${jaundice.value} ${jaundice.unit}` : "待记录";
+  $("#latestJaundiceTime").textContent = jaundice ? `${formatMonthDay(jaundice.time)} ${formatTime(jaundice.time)}` : "点击记录";
+
+  const today = dateKey(new Date());
+  const schedules = records
+    .filter((record) => record.type === "vaccine" && /^\d{4}-\d{2}-\d{2}$/.test(record.nextDate || ""))
+    .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+  const nextVaccine = schedules.find((record) => record.nextDate >= today) || schedules[schedules.length - 1];
+  $("#nextVaccineDate").textContent = nextVaccine ? vaccineDateLabel(nextVaccine.nextDate) : "待安排";
+  $("#nextVaccineName").textContent = nextVaccine
+    ? `${nextVaccine.vaccineName} · ${vaccineCountdownLabel(nextVaccine.nextDate)}`
+    : "点击记录疫苗与下次时间";
 }
 
 function renderSummary() {
@@ -302,7 +388,7 @@ function renderDayTimeline() {
     const labelStart = record.start < start ? "00:00" : formatTime(record.start);
     const labelEnd = recordEnd > end ? "24:00" : formatTime(recordEnd);
     const description = `蓝光 ${labelStart}至${labelEnd}，${formatDuration(clippedEnd - clippedStart)}`;
-    return `<span class="light-period ${!record.end ? "active" : ""} ${left < 5 ? "edge-start" : right > 95 ? "edge-end" : ""}" style="--start:${left.toFixed(3)}%;--width:${Math.max(0, right - left).toFixed(3)}%" role="img" aria-label="${escapeHtml(description)}" title="${escapeHtml(description)}"><span>${labelStart}–${labelEnd}</span></span>`;
+    return `<span class="light-period ${!record.end ? "active" : ""} ${left < 5 ? "edge-start" : right > 95 ? "edge-end" : ""}" style="--start:${left.toFixed(3)}%;--width:${Math.max(0, right - left).toFixed(3)}%" role="button" tabindex="0" aria-label="${escapeHtml(description)}" data-tooltip="${escapeHtml(description)}"></span>`;
   }).join("");
   const empty = `<span class="lane-empty">暂无</span>`;
   const summary = `当天吃奶${feedings.length}次，排泄${outputs.length}次，蓝光${lights.length}段`;
@@ -327,6 +413,7 @@ function renderTimeline() {
   if (activeFilter === "feeding") daily = daily.filter((record) => record.type === "feeding");
   if (activeFilter === "output") daily = daily.filter((record) => record.type === "poop" || record.type === "pee");
   if (activeFilter === "light") daily = daily.filter((record) => record.type === "light");
+  if (activeFilter === "health") daily = daily.filter((record) => ["bath", "growth", "jaundice", "vaccine"].includes(record.type));
   daily.sort((a, b) => (b.type === "light" ? b.start : b.time) - (a.type === "light" ? a.start : a.time));
 
   const timeline = $("#timeline");
@@ -350,9 +437,20 @@ function timelineItem(record, index) {
     value = `${record.amount || 0} ml`;
   } else if (record.type === "poop" || record.type === "pee") {
     value = amountNames[record.amount] || "中量";
-  } else {
+  } else if (record.type === "light") {
     value = record.end ? formatDuration(record.end - record.start) : "进行中";
     detail = `${formatTime(record.start)} 开始${record.end ? ` · ${formatTime(record.end)} 结束` : ""}${record.note ? ` · ${record.note}` : ""}`;
+  } else if (record.type === "growth") {
+    value = [record.height ? `${record.height}cm` : "", record.weight ? `${record.weight}kg` : ""].filter(Boolean).join(" · ");
+  } else if (record.type === "jaundice") {
+    value = `${record.value} ${record.unit}`;
+  } else if (record.type === "vaccine") {
+    title = record.vaccineName;
+    value = record.dose || "已接种";
+    detail = `${record.nextDate ? `下次 ${vaccineDateLabel(record.nextDate)}` : "未填写下次时间"}${record.note ? ` · ${record.note}` : ""}`;
+  } else if (record.type === "bath") {
+    value = record.duration ? `${record.duration} 分钟` : "已洗澡";
+    detail = `${record.waterTemp ? `水温 ${record.waterTemp}℃` : ""}${record.note ? `${record.waterTemp ? " · " : ""}${record.note}` : ""}`;
   }
   const interval = previous ? `<span class="interval-pill">⏱ 距上次 ${formatInterval(timestamp - previousTime)}</span>` : `<span class="interval-pill first">首次记录</span>`;
   return `<article class="timeline-item ${record.type}" style="animation-delay:${Math.min(index * 30, 180)}ms">
@@ -382,9 +480,13 @@ function openModal(type) {
   $("#recordType").value = type;
   $("#modalTitle").textContent = meta.title;
   $("#modalIcon").textContent = meta.icon;
-  $("#modalIcon").style.background = type === "light" ? "var(--violet-soft)" : type === "pee" ? "var(--blue-soft)" : type === "poop" ? "var(--yellow-soft)" : "var(--peach-soft)";
+  $("#modalIcon").style.background = meta.color;
   $("#feedingFields").hidden = type !== "feeding";
   $("#outputFields").hidden = type !== "poop" && type !== "pee";
+  $("#growthFields").hidden = type !== "growth";
+  $("#jaundiceFields").hidden = type !== "jaundice";
+  $("#vaccineFields").hidden = type !== "vaccine";
+  $("#bathFields").hidden = type !== "bath";
   $("#singleTimeFields").hidden = type === "light";
   $("#lightFields").hidden = type !== "light";
   $("#eventTimeInput").required = type !== "light";
@@ -410,13 +512,49 @@ function openModal(type) {
   }
   $("#modalBackdrop").hidden = false;
   document.body.style.overflow = "hidden";
-  setTimeout(() => (type === "feeding" ? $("#feedingAmountInput") : type === "light" && activeLight ? $("#lightEndTimeInput") : type === "light" ? $("#lightStartTimeInput") : $("#eventTimeInput")).focus(), 50);
+  const focusTarget = type === "feeding" ? $("#feedingAmountInput")
+    : type === "growth" ? $("#heightInput")
+    : type === "jaundice" ? $("#jaundiceValueInput")
+    : type === "vaccine" ? $("#vaccineNameInput")
+    : type === "bath" ? $("#bathDurationInput")
+    : type === "light" && activeLight ? $("#lightEndTimeInput")
+    : type === "light" ? $("#lightStartTimeInput")
+    : $("#eventTimeInput");
+  setTimeout(() => focusTarget.focus(), 50);
 }
 
 function closeModal() {
   $("#modalBackdrop").hidden = true;
   document.body.style.overflow = "";
   editingActiveLightId = null;
+}
+
+function openProfileModal() {
+  $("#profileForm").reset();
+  $("#babyNameInput").value = babyProfile?.name || "";
+  setDateTimeFields("babyBirth", babyProfile ? new Date(babyProfile.birthAt) : new Date());
+  $("#profileModalBackdrop").hidden = false;
+  document.body.style.overflow = "hidden";
+  setTimeout(() => $("#babyNameInput").focus(), 50);
+}
+
+function closeProfileModal() {
+  $("#profileModalBackdrop").hidden = true;
+  document.body.style.overflow = "";
+}
+
+function submitProfile(event) {
+  event.preventDefault();
+  const name = $("#babyNameInput").value.trim();
+  const birthAt = parseDateTime($("#babyBirthDateInput").value, $("#babyBirthTimeInput").value);
+  if (!name) return showToast("请填写宝宝姓名");
+  if (!Number.isFinite(birthAt)) return showToast("请正确填写出生日期和时间");
+  if (birthAt > Date.now()) return showToast("出生时间不能晚于现在");
+  babyProfile = { name, birthAt, updatedAt: Date.now() };
+  saveRecords();
+  closeProfileModal();
+  render();
+  showToast("宝宝档案已保存", true);
 }
 
 function submitRecord(event) {
@@ -436,6 +574,42 @@ function submitRecord(event) {
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     if (!Number.isFinite(time)) return showToast("请正确填写发生日期和时间");
     record = { ...base, amount: new FormData(event.currentTarget).get("outputAmount"), time };
+  } else if (type === "growth") {
+    const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
+    const heightValue = $("#heightInput").value.trim();
+    const weightValue = $("#weightInput").value.trim();
+    const height = heightValue ? Number(heightValue) : null;
+    const weight = weightValue ? Number(weightValue) : null;
+    if (!Number.isFinite(time)) return showToast("请正确填写测量日期和时间");
+    if (height === null && weight === null) return showToast("身高和体重至少填写一项");
+    if (height !== null && (!Number.isFinite(height) || height <= 0)) return showToast("请正确填写身高");
+    if (weight !== null && (!Number.isFinite(weight) || weight <= 0)) return showToast("请正确填写体重");
+    record = { ...base, time, height, weight };
+  } else if (type === "jaundice") {
+    const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
+    const value = Number($("#jaundiceValueInput").value);
+    if (!Number.isFinite(time)) return showToast("请正确填写测量日期和时间");
+    if (!Number.isFinite(value) || value < 0) return showToast("请正确填写黄疸数值");
+    record = { ...base, time, value, unit: new FormData(event.currentTarget).get("jaundiceUnit") || "mg/dL" };
+  } else if (type === "vaccine") {
+    const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
+    const vaccineName = $("#vaccineNameInput").value.trim();
+    const dose = $("#vaccineDoseInput").value.trim();
+    const nextDate = $("#nextVaccineDateInput").value;
+    if (!vaccineName) return showToast("请填写疫苗名称");
+    if (!Number.isFinite(time)) return showToast("请正确填写接种日期和时间");
+    if (nextDate && nextDate < dateKey(new Date(time))) return showToast("下次疫苗日期不能早于本次接种日期");
+    record = { ...base, time, vaccineName, dose, nextDate };
+  } else if (type === "bath") {
+    const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
+    const durationValue = $("#bathDurationInput").value.trim();
+    const waterTempValue = $("#bathWaterTempInput").value.trim();
+    const duration = durationValue ? Number(durationValue) : null;
+    const waterTemp = waterTempValue ? Number(waterTempValue) : null;
+    if (!Number.isFinite(time)) return showToast("请正确填写洗澡日期和时间");
+    if (duration !== null && (!Number.isFinite(duration) || duration <= 0)) return showToast("请正确填写洗澡时长");
+    if (waterTemp !== null && (!Number.isFinite(waterTemp) || waterTemp <= 0)) return showToast("请正确填写水温");
+    record = { ...base, time, duration, waterTemp };
   } else {
     const start = parseDateTime($("#lightStartDateInput").value, $("#lightStartTimeInput").value);
     const endTimeValue = $("#lightEndTimeInput").value;
@@ -501,7 +675,7 @@ function deleteRecord(id) {
 }
 
 function buildExportPayload() {
-  return { app: "宝宝照护日记", version: 1, exportedAt: new Date().toISOString(), recordCount: records.length, records };
+  return { app: "宝宝照护日记", version: 2, exportedAt: new Date().toISOString(), profile: babyProfile, recordCount: records.length, records };
 }
 
 function setCloudSyncState(state, detail = "") {
@@ -592,7 +766,7 @@ async function readCloudSnapshot(config) {
   const response = await githubRequest(`${githubRepositoryApi(config)}/contents/${CLOUD_FILE_PATH}`, config, {
     headers: { Accept: "application/vnd.github.object+json" },
   });
-  if (response.status === 404) return { sha: null, records: [], deletedRecords: {} };
+  if (response.status === 404) return { sha: null, profile: null, records: [], deletedRecords: {} };
   if (!response.ok) throw new Error("github-api-error");
   const file = await response.json();
   let payload;
@@ -603,12 +777,13 @@ async function readCloudSnapshot(config) {
   }
   return {
     sha: file.sha,
+    profile: normalizeProfile(payload.profile),
     records: Array.isArray(payload.records) ? payload.records : [],
     deletedRecords: payload.deletedRecords && typeof payload.deletedRecords === "object" ? payload.deletedRecords : {},
   };
 }
 
-function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords) {
+function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords, remoteProfile) {
   const mergedDeleted = { ...deletedRecords };
   Object.entries(remoteDeletedRecords || {}).forEach(([id, timestamp]) => {
     const value = Number(timestamp) || 0;
@@ -629,8 +804,12 @@ function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords) {
     return deletedAt < updatedAt;
   });
   deletedRecords = mergedDeleted;
+  if (remoteProfile && (!babyProfile || remoteProfile.updatedAt >= (Number(babyProfile.updatedAt) || 0))) {
+    babyProfile = remoteProfile;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   localStorage.setItem(DELETED_KEY, JSON.stringify(deletedRecords));
+  if (babyProfile) localStorage.setItem(PROFILE_KEY, JSON.stringify(babyProfile));
 }
 
 async function writeCloudSnapshot(config, sha) {
@@ -638,6 +817,7 @@ async function writeCloudSnapshot(config, sha) {
     app: "宝宝照护日记",
     version: 2,
     syncedAt: new Date().toISOString(),
+    profile: babyProfile,
     recordCount: records.length,
     records,
     deletedRecords,
@@ -679,7 +859,7 @@ async function syncWithCloud({ silent = false } = {}) {
     let completed = false;
     for (let attempt = 0; attempt < 3 && !completed; attempt += 1) {
       const remote = await readCloudSnapshot(syncConfig);
-      mergeCloudSnapshot(remote.records, remote.deletedRecords);
+      mergeCloudSnapshot(remote.records, remote.deletedRecords, remote.profile);
       const response = await writeCloudSnapshot(syncConfig, remote.sha);
       if (response.ok) {
         completed = true;
@@ -803,6 +983,36 @@ function normalizeImportedRecord(item, index) {
     if (!Number.isFinite(time)) return null;
     return { ...base, time, amount: ["small", "medium", "large"].includes(item.amount) ? item.amount : "medium" };
   }
+  if (item.type === "growth") {
+    const time = Number(item.time);
+    const height = item.height === null || item.height === undefined || item.height === "" ? null : Number(item.height);
+    const weight = item.weight === null || item.weight === undefined || item.weight === "" ? null : Number(item.weight);
+    if (!Number.isFinite(time) || (height === null && weight === null)) return null;
+    if ((height !== null && (!Number.isFinite(height) || height <= 0)) || (weight !== null && (!Number.isFinite(weight) || weight <= 0))) return null;
+    return { ...base, time, height, weight };
+  }
+  if (item.type === "jaundice") {
+    const time = Number(item.time);
+    const value = Number(item.value);
+    if (!Number.isFinite(time) || !Number.isFinite(value) || value < 0) return null;
+    return { ...base, time, value, unit: item.unit === "μmol/L" ? "μmol/L" : "mg/dL" };
+  }
+  if (item.type === "vaccine") {
+    const time = Number(item.time);
+    const vaccineName = String(item.vaccineName || "").slice(0, 30);
+    const dose = String(item.dose || "").slice(0, 20);
+    const nextDate = /^\d{4}-\d{2}-\d{2}$/.test(item.nextDate || "") ? item.nextDate : "";
+    if (!Number.isFinite(time) || !vaccineName) return null;
+    return { ...base, time, vaccineName, dose, nextDate };
+  }
+  if (item.type === "bath") {
+    const time = Number(item.time);
+    const duration = item.duration === null || item.duration === undefined || item.duration === "" ? null : Number(item.duration);
+    const waterTemp = item.waterTemp === null || item.waterTemp === undefined || item.waterTemp === "" ? null : Number(item.waterTemp);
+    if (!Number.isFinite(time)) return null;
+    if ((duration !== null && (!Number.isFinite(duration) || duration <= 0)) || (waterTemp !== null && (!Number.isFinite(waterTemp) || waterTemp <= 0))) return null;
+    return { ...base, time, duration, waterTemp };
+  }
   const start = Number(item.start);
   const end = item.end === null || item.end === undefined ? null : Number(item.end);
   if (!Number.isFinite(start) || (end !== null && (!Number.isFinite(end) || end <= start))) return null;
@@ -816,6 +1026,7 @@ async function importRecords(event) {
     const parsed = JSON.parse(await file.text());
     const source = Array.isArray(parsed) ? parsed : parsed.records;
     if (!Array.isArray(source)) throw new Error("invalid-format");
+    const importedProfile = Array.isArray(parsed) ? null : normalizeProfile(parsed.profile);
     const imported = source.map(normalizeImportedRecord).filter(Boolean);
     if (!imported.length) throw new Error("no-records");
 
@@ -827,6 +1038,7 @@ async function importRecords(event) {
       delete deletedRecords[item.id];
     });
     records = [...merged.values()];
+    if (importedProfile && (!babyProfile || importedProfile.updatedAt >= (Number(babyProfile.updatedAt) || 0))) babyProfile = importedProfile;
     saveRecords();
     render();
     closeDataModal();
@@ -841,6 +1053,7 @@ async function importRecords(event) {
 function syncHistoryFromStorage(showNotice = false) {
   records = loadRecords();
   deletedRecords = loadDeletedRecords();
+  babyProfile = loadProfile();
   render();
   if (showNotice && records.length) showToast(`已同步 ${records.length} 条历史记录`);
 }
@@ -864,6 +1077,10 @@ function showToast(message, offerExport = false) {
 $$('[data-open]').forEach((button) => button.addEventListener("click", () => openModal(button.dataset.open)));
 $("#modalClose").addEventListener("click", closeModal);
 $("#modalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeModal(); });
+$("#profileEditButton").addEventListener("click", openProfileModal);
+$("#profileModalClose").addEventListener("click", closeProfileModal);
+$("#profileModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeProfileModal(); });
+$("#profileForm").addEventListener("submit", submitProfile);
 $("#dataButton").addEventListener("click", openDataModal);
 $("#dataModalClose").addEventListener("click", closeDataModal);
 $("#dataModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeDataModal(); });
@@ -891,12 +1108,13 @@ $$('[data-now-for]').forEach((button) => button.addEventListener("click", () => 
 $$('[data-amount]').forEach((button) => button.addEventListener("click", () => { $("#feedingAmountInput").value = button.dataset.amount; }));
 $$('[data-filter]').forEach((button) => button.addEventListener("click", () => { activeFilter = button.dataset.filter; $$('[data-filter]').forEach((item) => item.classList.toggle("active", item === button)); renderTimeline(); }));
 $("#timeline").addEventListener("click", (event) => { const button = event.target.closest("[data-delete]"); if (button) deleteRecord(button.dataset.delete); });
-window.addEventListener("storage", (event) => { if (event.key === STORAGE_KEY) syncHistoryFromStorage(true); });
+window.addEventListener("storage", (event) => { if (event.key === STORAGE_KEY || event.key === PROFILE_KEY) syncHistoryFromStorage(true); });
 window.addEventListener("pageshow", () => syncHistoryFromStorage(false));
 document.addEventListener("visibilitychange", () => { if (!document.hidden) syncHistoryFromStorage(false); });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!$("#modalBackdrop").hidden) closeModal();
+  if (!$("#profileModalBackdrop").hidden) closeProfileModal();
   if (!$("#dataModalBackdrop").hidden) closeDataModal();
 });
 

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#fff8f3" />
     <meta name="description" content="简单好用的宝宝吃奶、排泄与蓝光照护记录工具" />
     <title>宝宝照护日记</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260826-4" />
   </head>
   <body>
     <div class="page-shell">
@@ -32,6 +32,24 @@
             <span class="star star-one">✦</span><span class="star star-two">✦</span>
             <div class="moon">☾</div>
             <div class="baby-face"><i></i><b></b><em></em></div>
+          </div>
+        </section>
+
+        <section class="baby-profile" aria-labelledby="babyProfileTitle">
+          <button class="profile-identity" id="profileEditButton" type="button" aria-label="编辑宝宝档案">
+            <span class="profile-avatar" aria-hidden="true">👶</span>
+            <div><p><strong id="babyProfileTitle"><span id="babyName">设置宝宝档案</span></strong><b id="babyAge">未设置出生时间</b></p><small id="babyBirth">点击填写姓名和出生时间</small></div>
+          </button>
+          <div class="profile-stats">
+            <button class="profile-stat growth-stat" data-open="growth" type="button">
+              <small>📏 身高 / 体重</small><strong><span id="latestHeight">--cm</span><i>·</i><span id="latestWeight">--kg</span></strong><em id="latestGrowthTime">点击记录</em>
+            </button>
+            <button class="profile-stat jaundice-stat" data-open="jaundice" type="button">
+              <small>🟡 最新黄疸</small><strong id="latestJaundice">待记录</strong><em id="latestJaundiceTime">点击记录</em>
+            </button>
+            <button class="profile-stat vaccine-stat" data-open="vaccine" type="button">
+              <small>💉 下次疫苗</small><strong id="nextVaccineDate">待安排</strong><em id="nextVaccineName">点击记录疫苗与下次时间</em>
+            </button>
           </div>
         </section>
 
@@ -74,6 +92,10 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m6.4.6L17 7M21 12h-2M5 12H3m4-5L5.6 5.6M12 8a4 4 0 0 0-2 7.5V18h4v-2.5A4 4 0 0 0 12 8Zm-2 13h4"/></svg>
               </span>
               <span><strong>照蓝光</strong><small id="lightQuickSubtitle">开始 / 结束</small></span><b>＋</b>
+            </button>
+            <button class="quick-card bath" data-open="bath" type="button">
+              <span class="quick-icon" aria-hidden="true">🛁</span>
+              <span><strong>洗澡</strong><small>时间 / 时长 / 水温</small></span><b>＋</b>
             </button>
           </div>
         </section>
@@ -136,7 +158,7 @@
             <p id="timelineChartDate"></p>
           </div>
           <div class="day-timeline" id="dayTimeline" aria-live="polite"></div>
-          <div class="timeline-legend" aria-label="时间轴图例"><span><i class="feeding-key"></i>吃奶</span><span><i class="poop-key"></i>大便</span><span><i class="pee-key"></i>小便</span><span><i class="light-key"></i>蓝光时段</span><span class="hover-guide">悬浮圆点查看时间和详情</span></div>
+          <div class="timeline-legend" aria-label="时间轴图例"><span><i class="feeding-key"></i>吃奶</span><span><i class="poop-key"></i>大便</span><span><i class="pee-key"></i>小便</span><span><i class="light-key"></i>蓝光时段</span><span class="hover-guide">点按图标或蓝光色块查看详情</span></div>
           <div class="detail-toolbar">
             <h3>当天详细记录</h3>
             <div class="filter-tabs" role="tablist" aria-label="筛选记录">
@@ -144,6 +166,7 @@
               <button data-filter="feeding" type="button">吃奶</button>
               <button data-filter="output" type="button">排泄</button>
               <button data-filter="light" type="button">蓝光</button>
+              <button data-filter="health" type="button">健康</button>
             </div>
           </div>
           <div class="timeline" id="timeline"></div>
@@ -183,6 +206,41 @@
             </div>
           </div>
 
+          <div class="form-section" id="growthFields" hidden>
+            <label>本次测量 <small>（至少填写一项）</small></label>
+            <div class="measure-grid">
+              <label><small>身高</small><div class="number-field"><input id="heightInput" type="number" inputmode="decimal" min="0" step="0.1" placeholder="例如 50.5" /><span>cm</span></div></label>
+              <label><small>体重</small><div class="number-field"><input id="weightInput" type="number" inputmode="decimal" min="0" step="0.01" placeholder="例如 3.25" /><span>kg</span></div></label>
+            </div>
+          </div>
+
+          <div class="form-section" id="bathFields" hidden>
+            <label>洗澡信息 <small>（选填）</small></label>
+            <div class="measure-grid">
+              <label><small>时长</small><div class="number-field"><input id="bathDurationInput" type="number" inputmode="decimal" min="0" step="1" placeholder="例如 10" /><span>分钟</span></div></label>
+              <label><small>水温</small><div class="number-field"><input id="bathWaterTempInput" type="number" inputmode="decimal" min="0" step="0.1" placeholder="例如 38" /><span>℃</span></div></label>
+            </div>
+          </div>
+
+          <div class="form-section" id="jaundiceFields" hidden>
+            <label for="jaundiceValueInput">黄疸数值</label>
+            <input id="jaundiceValueInput" type="number" inputmode="decimal" min="0" step="0.1" placeholder="输入测量值" />
+            <label>单位</label>
+            <div class="segmented jaundice-units">
+              <label><input type="radio" name="jaundiceUnit" value="mg/dL" checked /><span>mg/dL</span></label>
+              <label><input type="radio" name="jaundiceUnit" value="μmol/L" /><span>μmol/L</span></label>
+            </div>
+          </div>
+
+          <div class="form-section" id="vaccineFields" hidden>
+            <label for="vaccineNameInput">疫苗名称</label>
+            <input id="vaccineNameInput" type="text" maxlength="30" placeholder="例如：乙肝疫苗" />
+            <label for="vaccineDoseInput">针次 <small>（选填）</small></label>
+            <input id="vaccineDoseInput" type="text" maxlength="20" placeholder="例如：第1针" />
+            <label for="nextVaccineDateInput">下次疫苗日期 <small>（选填）</small></label>
+            <input id="nextVaccineDateInput" type="date" />
+          </div>
+
           <div class="form-section" id="singleTimeFields">
             <label>发生日期和时间</label>
             <div class="date-time-row">
@@ -214,6 +272,23 @@
           <label for="noteInput">备注 <small>（选填）</small></label>
           <input id="noteInput" type="text" maxlength="60" placeholder="例如：胃口很好" />
           <button class="submit-button" id="submitButton" type="submit">保存记录</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="profileModalBackdrop" hidden>
+      <section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+        <button class="modal-close" id="profileModalClose" type="button" aria-label="关闭">×</button>
+        <div class="modal-heading"><span>👶</span><div><p class="eyebrow">宝宝资料</p><h2 id="profileModalTitle">编辑宝宝档案</h2></div></div>
+        <form id="profileForm">
+          <label for="babyNameInput">宝宝姓名</label>
+          <input id="babyNameInput" type="text" maxlength="30" placeholder="请输入宝宝姓名" required />
+          <label>出生日期和时间</label>
+          <div class="date-time-row">
+            <div><small>日期</small><input id="babyBirthDateInput" type="date" required aria-label="宝宝出生日期" /></div>
+            <div><small>时间</small><input id="babyBirthTimeInput" type="time" step="60" required aria-label="宝宝出生时间" /></div>
+          </div>
+          <button class="submit-button" type="submit">保存宝宝档案</button>
         </form>
       </section>
     </div>
@@ -252,6 +327,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260825-4"></script>
+    <script src="app.js?v=20260826-4"></script>
   </body>
 </html>

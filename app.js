@@ -186,12 +186,31 @@ function renderDate() {
   const selected = new Date(`${selectedDate}T12:00:00`);
   const today = dateKey(new Date());
   const diff = Math.round((new Date(`${selectedDate}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
-  $("#datePrimary").textContent = diff === 0 ? "今天" : diff === -1 ? "昨天" : diff === 1 ? "明天" : `${selected.getMonth() + 1}月${selected.getDate()}日`;
-  $("#dateSecondary").textContent = `${selected.getMonth() + 1}月${selected.getDate()}日 · ${weekday(selected)}`;
+  $("#datePrimary").textContent = `${selected.getFullYear()}年${selected.getMonth() + 1}月${selected.getDate()}日`;
+  $("#dateSecondary").textContent = `${formatLunarDate(selected)} · ${weekday(selected)}`;
   $("#summaryDate").textContent = `${selected.getMonth() + 1}月${selected.getDate()}日`;
   $("#timelineChartDate").textContent = `${selected.getMonth() + 1}月${selected.getDate()}日 · ${weekday(selected)}`;
   $("#datePicker").value = selectedDate;
   $("#todayButton").hidden = diff === 0;
+}
+
+function formatLunarDate(date) {
+  try {
+    const parts = new Intl.DateTimeFormat("zh-CN-u-ca-chinese", { year: "numeric", month: "long", day: "numeric" }).formatToParts(date);
+    const yearName = parts.find((part) => part.type === "yearName")?.value || "";
+    const month = parts.find((part) => part.type === "month")?.value || "";
+    const day = Number(parts.find((part) => part.type === "day")?.value);
+    const digits = "一二三四五六七八九";
+    const lunarDay = day <= 0 || day > 30 ? "" : day <= 10
+      ? `初${day === 10 ? "十" : digits[day - 1]}`
+      : day < 20 ? `十${digits[day - 11] || ""}`
+      : day === 20 ? "二十"
+      : day < 30 ? `廿${digits[day - 21] || ""}`
+      : "三十";
+    return `农历${yearName ? `${yearName}年` : ""}${month}${lunarDay}`;
+  } catch {
+    return "农历日期";
+  }
 }
 
 function formatBabyAge(now = Date.now()) {

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#fff8f3" />
     <meta name="description" content="简单好用的宝宝吃奶、排泄与蓝光照护记录工具" />
     <title>宝宝照护日记</title>
-    <link rel="stylesheet" href="styles.css?v=20260826-5" />
+    <link rel="stylesheet" href="styles.css?v=20260826-6" />
   </head>
   <body>
     <div class="page-shell">
@@ -22,32 +22,23 @@
       </header>
 
       <main>
-        <section class="welcome-card" aria-labelledby="welcomeTitle">
-          <div>
-            <div class="date-toolbar welcome-date-toolbar" aria-label="选择查看日期">
-              <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
-              <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
-                <span id="datePrimary">今天</span><small id="dateSecondary"></small>
-              </button>
-              <input class="hidden-date" id="datePicker" type="date" />
-              <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
-              <button class="today-button" id="todayButton" type="button" aria-label="回到今天">今天</button>
-            </div>
-            <h1 id="welcomeTitle">嗨，今天也辛苦啦 <span aria-hidden="true">👋</span></h1>
-            <p>吃饱、睡好、舒舒服服长大。</p>
+        <section class="welcome-card" aria-label="日期和宝宝档案">
+          <div class="date-toolbar welcome-date-toolbar" aria-label="选择查看日期">
+            <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
+            <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
+              <span id="datePrimary"></span><small id="dateSecondary"></small>
+            </button>
+            <input class="hidden-date" id="datePicker" type="date" />
+            <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
+            <button class="today-button" id="todayButton" type="button" aria-label="回到今天">今天</button>
           </div>
-          <div class="baby-illustration" aria-hidden="true">
-            <span class="star star-one">✦</span><span class="star star-two">✦</span>
-            <div class="moon">☾</div>
-            <div class="baby-face"><i></i><b></b><em></em></div>
-          </div>
-        </section>
-
-        <section class="baby-profile" aria-labelledby="babyProfileTitle">
           <button class="profile-identity" id="profileEditButton" type="button" aria-label="编辑宝宝档案">
             <span class="profile-avatar" aria-hidden="true">👶</span>
             <div><p><strong id="babyProfileTitle"><span id="babyName">设置宝宝档案</span></strong><b id="babyAge">未设置出生时间</b></p><small id="babyBirth">点击填写姓名和出生时间</small></div>
           </button>
+        </section>
+
+        <section class="baby-profile" aria-label="宝宝健康记录">
           <div class="profile-stats">
             <button class="profile-stat growth-stat" data-open="growth" type="button">
               <small>📏 身高 / 体重</small><strong><span id="latestHeight">--cm</span><i>·</i><span id="latestWeight">--kg</span></strong><em id="latestGrowthTime">点击记录</em>
@@ -91,7 +82,8 @@
               </span>
               <span><strong>照蓝光</strong><small id="lightQuickSubtitle">开始 / 结束</small></span><b>＋</b>
             </button>
-            <button class="quick-card bath" data-open="bath" type="button">
+            <!-- 洗澡入口暂时隐藏；需要恢复时移除 hidden 即可。 -->
+            <button class="quick-card bath" data-open="bath" type="button" hidden>
               <span class="quick-icon" aria-hidden="true">🛁</span>
               <span><strong>洗澡</strong><small>时间 / 时长 / 水温</small></span><b>＋</b>
             </button>
@@ -325,6 +317,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260826-5"></script>
+    <script src="app.js?v=20260826-6"></script>
   </body>
 </html>

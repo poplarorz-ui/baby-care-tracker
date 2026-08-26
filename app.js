@@ -16,7 +16,6 @@ const typeMeta = {
   vaccine: { title: "记录疫苗", icon: "💉", label: "疫苗", color: "#edf3ff" },
 };
 const amountNames = { small: "小量", medium: "中量", large: "大量" };
-const amountShort = { small: "小", medium: "中", large: "大" };
 const FEEDING_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 let records = loadRecords();
@@ -293,16 +292,28 @@ function renderSummary() {
   $("#formulaStats").textContent = `${formula.length}次 · ${sumAmount(formula)}ml`;
   $("#poopCount").textContent = poops.length;
   $("#peeCount").textContent = pees.length;
-  $("#poopDetail").textContent = outputSummary(poops);
-  $("#peeDetail").textContent = outputSummary(pees);
   $("#lightDuration").textContent = formatDuration(lightMs, true);
-  $("#lightCount").textContent = `${lights.length} 次`;
+  $("#lightCount").textContent = `${lights.length}次`;
+  renderElapsedSummaries();
 }
 
-function outputSummary(items) {
-  if (!items.length) return "今天还没有记录";
-  const groups = ["large", "medium", "small"].map((amount) => ({ amount, count: items.filter((item) => item.amount === amount).length })).filter((item) => item.count);
-  return groups.map((item) => `${amountShort[item.amount]} ${item.count}次`).join(" · ");
+function latestRecord(type, timestampField = "time", predicate = () => true) {
+  return records
+    .filter((record) => record.type === type && predicate(record) && Number.isFinite(Number(record[timestampField])))
+    .sort((a, b) => Number(b[timestampField]) - Number(a[timestampField]))[0];
+}
+
+function renderElapsedSummaries() {
+  const now = Date.now();
+  const latestPoop = latestRecord("poop");
+  const latestPee = latestRecord("pee");
+  const activeLight = records.find((record) => record.type === "light" && !record.end);
+  const latestStoppedLight = latestRecord("light", "end", (record) => Boolean(record.end));
+  $("#poopDetail").textContent = latestPoop ? `距上次 ${formatInterval(Math.max(0, now - latestPoop.time))}` : "暂无大便记录";
+  $("#peeDetail").textContent = latestPee ? `距上次 ${formatInterval(Math.max(0, now - latestPee.time))}` : "暂无小便记录";
+  $("#lightStopDetail").textContent = activeLight
+    ? " · 正在照蓝光"
+    : latestStoppedLight ? ` · 已停止 ${formatInterval(Math.max(0, now - latestStoppedLight.end))}` : " · 暂无结束记录";
 }
 
 function formatCountdown(ms) {
@@ -1137,7 +1148,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 render();
-if (!countdownTimerId) countdownTimerId = setInterval(renderFeedingCountdown, 1000);
+if (!countdownTimerId) countdownTimerId = setInterval(() => { renderFeedingCountdown(); renderElapsedSummaries(); }, 1000);
 if (records.length) scheduleAutoBackup(1500);
 if (records.length) setTimeout(() => showToast(`已同步 ${records.length} 条历史记录`), 450);
 if (syncConfig) setTimeout(() => syncWithCloud({ silent: true }), 900);

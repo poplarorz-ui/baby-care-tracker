@@ -165,20 +165,28 @@ function lightCourseId(record) {
 }
 
 function getLightCourses() {
-  const groups = new Map();
-  records.filter((record) => record.type === "light").forEach((record) => {
-    const id = lightCourseId(record);
-    if (!groups.has(id)) groups.set(id, { id, records: [], startedAt: Number(record.start), ended: false, targetMinutes: DEFAULT_LIGHT_COURSE_MINUTES });
-    const course = groups.get(id);
+  const sorted = records.filter((record) => record.type === "light").sort((a, b) => Number(a.start) - Number(b.start));
+  const courses = [];
+  let course = null;
+  sorted.forEach((record) => {
+    // 疗程按真实时间和开始/结束边界串联。courseId 只用于保存和续接，
+    // 避免编辑一条旧记录后，后续没有 courseId 的历史记录被拆散。
+    if (!course || record.courseStart || course.ended) {
+      course = {
+        id: lightCourseId(record),
+        records: [],
+        startedAt: Number(record.start),
+        ended: false,
+        targetMinutes: DEFAULT_LIGHT_COURSE_MINUTES,
+      };
+      courses.push(course);
+    }
     course.records.push(record);
-    course.startedAt = Math.min(course.startedAt, Number(record.start));
-    course.ended = course.ended || Boolean(record.courseEnd);
     const target = Number(record.courseTargetMinutes);
     if (Number.isFinite(target) && target > 0) course.targetMinutes = target;
+    if (record.courseEnd) course.ended = true;
   });
-  const courses = [...groups.values()].sort((a, b) => a.startedAt - b.startedAt);
   courses.forEach((course, index) => {
-    course.records.sort((a, b) => a.start - b.start);
     course.lastAt = Math.max(...course.records.map((record) => Number(record.end) || Number(record.start)));
     course.activeLight = course.records.find((record) => !record.end) || null;
     course.inferredEnded = course.ended || index < courses.length - 1;
@@ -604,7 +612,7 @@ function openModal(type, recordToEdit = null) {
       setDateTimeFields("lightStart", new Date(target.start));
       if (target.end) setDateTimeFields("lightEnd", new Date(target.end));
       else setDateTimeFields("lightEnd");
-      const course = getLightCourses().find((item) => item.id === lightCourseId(target));
+      const course = getLightCourses().find((item) => item.records.some((record) => record.id === target.id));
       $("#lightCourseStartInput").checked = Boolean(target.courseStart);
       $("#lightCourseEndInput").checked = Boolean(target.courseEnd);
       $("#lightCourseTargetInput").value = ((Number(target.courseTargetMinutes) || course?.targetMinutes || DEFAULT_LIGHT_COURSE_MINUTES) / 60).toString();

@@ -950,7 +950,15 @@ function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords, remoteProfile) 
     const existing = merged.get(record.id);
     const recordVersion = Number(record.updatedAt) || Number(record.createdAt) || 0;
     const existingVersion = Number(existing?.updatedAt) || Number(existing?.createdAt) || 0;
-    if (!existing || recordVersion >= existingVersion) merged.set(record.id, record);
+    if (!existing) {
+      merged.set(record.id, record);
+    } else if (recordVersion === existingVersion) {
+      merged.set(record.id, mergeEqualVersionRecord(existing, record));
+    } else if (recordVersion > existingVersion) {
+      merged.set(record.id, preserveMissingLightCourse(record, existing));
+    } else {
+      merged.set(record.id, preserveMissingLightCourse(existing, record));
+    }
   });
 
   records = [...merged.values()].filter((record) => {
@@ -965,6 +973,34 @@ function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords, remoteProfile) 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   localStorage.setItem(DELETED_KEY, JSON.stringify(deletedRecords));
   if (babyProfile) localStorage.setItem(PROFILE_KEY, JSON.stringify(babyProfile));
+}
+
+function preserveMissingLightCourse(preferred, fallback) {
+  if (preferred?.type !== "light" || fallback?.type !== "light" || preferred.courseId || !fallback.courseId) return preferred;
+  return {
+    ...preferred,
+    courseId: fallback.courseId,
+    courseStart: Boolean(fallback.courseStart),
+    courseEnd: Boolean(preferred.end) && Boolean(fallback.courseEnd),
+    courseTargetMinutes: Number(fallback.courseTargetMinutes) || Number(preferred.courseTargetMinutes) || DEFAULT_LIGHT_COURSE_MINUTES,
+  };
+}
+
+function mergeEqualVersionRecord(existing, incoming) {
+  const merged = { ...existing, ...incoming };
+  if (existing.type !== "light" || incoming.type !== "light") return merged;
+  const courseId = incoming.courseId || existing.courseId;
+  if (courseId) merged.courseId = courseId;
+  merged.courseStart = Boolean(existing.courseStart || incoming.courseStart);
+  merged.courseEnd = Boolean(merged.end) && Boolean(existing.courseEnd || incoming.courseEnd);
+  const existingTarget = Number(existing.courseTargetMinutes);
+  const incomingTarget = Number(incoming.courseTargetMinutes);
+  merged.courseTargetMinutes = incoming.courseId
+    ? incomingTarget || DEFAULT_LIGHT_COURSE_MINUTES
+    : existing.courseId
+      ? existingTarget || DEFAULT_LIGHT_COURSE_MINUTES
+      : incomingTarget || existingTarget || DEFAULT_LIGHT_COURSE_MINUTES;
+  return merged;
 }
 
 async function writeCloudSnapshot(config, sha) {

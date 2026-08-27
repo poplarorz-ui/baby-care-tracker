@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#fff8f3" />
     <meta name="description" content="简单好用的宝宝吃奶、排泄与兰光照护记录工具" />
     <title>宝宝照护日记</title>
-    <link rel="stylesheet" href="styles.css?v=20260826-15" />
+    <link rel="stylesheet" href="styles.css?v=20260827-01" />
   </head>
   <body>
     <div class="page-shell">
@@ -159,7 +159,6 @@
         </section>
       </main>
 
-      <footer><span>☁</span> 记录会自动保存在当前浏览器，本地服务运行时也会自动更新备份文件 <span>☁</span></footer>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button id="toastAction" type="button" hidden>导出备份</button></div>
@@ -233,7 +232,6 @@
               <div><small>日期</small><input id="eventDateInput" type="date" required aria-label="发生日期" /></div>
               <div><small>时间</small><input id="eventTimeInput" type="time" step="60" required aria-label="发生时间，只需输入小时和分钟" /></div>
             </div>
-            <p class="datetime-help">日期可手输或选择，时间框自带“:”</p>
             <button class="now-link" data-now-for="event" type="button">设为现在</button>
           </div>
 
@@ -260,7 +258,7 @@
             </div>
           </div>
 
-          <label for="noteInput">备注 <small>（选填）</small></label>
+          <label class="note-label" for="noteInput"><span>备注</span><small>（选填）</small></label>
           <input id="noteInput" type="text" maxlength="60" placeholder="例如：胃口很好" />
           <button class="submit-button" id="submitButton" type="submit">保存记录</button>
         </form>
@@ -318,6 +316,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260826-15"></script>
+    <script src="app.js?v=20260827-01"></script>
   </body>
 </html>

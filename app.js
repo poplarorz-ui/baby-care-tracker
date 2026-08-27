@@ -361,11 +361,12 @@ function renderElapsedSummaries() {
   const course = getCurrentLightCourse();
   const activeLight = course?.activeLight;
   const latestStoppedLight = course ? [...course.records].filter((record) => record.end).sort((a, b) => b.end - a.end)[0] : null;
+  const stoppedAt = Number(latestStoppedLight?.end) || Number(course?.lastAt);
   $("#poopDetail").textContent = latestPoop ? `距上次 ${formatInterval(Math.max(0, now - latestPoop.time))}` : "暂无大便记录";
   $("#peeDetail").textContent = latestPee ? `距上次 ${formatInterval(Math.max(0, now - latestPee.time))}` : "暂无小便记录";
   $("#lightStopDetail").textContent = activeLight
     ? " · 正在照兰光"
-    : course?.inferredEnded ? " · 疗程已结束"
+    : course?.inferredEnded ? ` · 疗程已结束${Number.isFinite(stoppedAt) ? ` · ${formatInterval(Math.max(0, now - stoppedAt))}未照兰光` : ""}`
     : latestStoppedLight ? ` · 已暂停 ${formatInterval(Math.max(0, now - latestStoppedLight.end))}` : " · 暂无疗程记录";
 }
 

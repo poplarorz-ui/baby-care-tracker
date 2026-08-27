@@ -515,6 +515,7 @@ function timelineItem(record, index) {
   let title = meta.label;
   let value = "";
   let detail = record.note || "";
+  let courseBadges = "";
   if (record.type === "feeding") {
     title = record.feedingType === "breast" ? "母乳" : "奶粉";
     value = `${record.amount || 0} ml`;
@@ -522,8 +523,14 @@ function timelineItem(record, index) {
     value = amountNames[record.amount] || "中量";
   } else if (record.type === "light") {
     value = record.end ? formatDuration(record.end - record.start) : "进行中";
-    const courseFlags = [record.courseStart ? "疗程开始" : "", record.courseEnd ? "疗程结束" : ""].filter(Boolean).join(" · ");
-    detail = `${formatTime(record.start)} 开始${record.end ? ` · ${formatTime(record.end)} 结束` : ""}${courseFlags ? ` · ${courseFlags}` : ""}${record.note ? ` · ${record.note}` : ""}`;
+    const lightCourse = getLightCourses().find((course) => course.records.some((item) => item.id === record.id));
+    const isCourseStart = lightCourse?.records[0]?.id === record.id;
+    const isCourseEnd = lightCourse?.inferredEnded && lightCourse.records[lightCourse.records.length - 1]?.id === record.id;
+    courseBadges = [
+      isCourseStart ? '<span class="course-badge start">疗程开始</span>' : "",
+      isCourseEnd ? '<span class="course-badge end">疗程结束</span>' : "",
+    ].filter(Boolean).join("");
+    detail = `${formatTime(record.start)} 开始${record.end ? ` · ${formatTime(record.end)} 结束` : ""}${record.note ? ` · ${record.note}` : ""}`;
   } else if (record.type === "growth") {
     value = [record.height ? `${record.height}cm` : "", record.weight ? `${record.weight}kg` : ""].filter(Boolean).join(" · ");
   } else if (record.type === "jaundice") {
@@ -539,7 +546,7 @@ function timelineItem(record, index) {
   const interval = previous ? `<span class="interval-pill">距上次 ${formatInterval(timestamp - previousTime)}</span>` : `<span class="interval-pill first">首次记录</span>`;
   return `<article class="timeline-item ${record.type}" style="animation-delay:${Math.min(index * 30, 180)}ms">
     <div class="timeline-dot">${meta.icon}</div>
-    <div class="timeline-content"><div class="timeline-main"><strong>${escapeHtml(title)}</strong><b>${escapeHtml(value)}</b><time>${formatTime(timestamp)}</time></div>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</div>
+    <div class="timeline-content"><div class="timeline-main"><strong>${escapeHtml(title)}</strong><b>${escapeHtml(value)}</b><time>${formatTime(timestamp)}</time></div>${courseBadges || detail ? `<div class="timeline-subline">${courseBadges}${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</div>` : ""}</div>
     <div class="timeline-actions">${interval}<button class="edit-button" data-edit="${record.id}" type="button" aria-label="编辑这条记录" title="编辑">编辑</button><button class="delete-button" data-delete="${record.id}" type="button" aria-label="删除这条记录" title="删除">×</button></div>
   </article>`;
 }

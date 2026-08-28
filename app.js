@@ -34,6 +34,7 @@ let cloudSyncState = syncConfig ? "waiting" : "off";
 let cloudSyncDetail = "";
 let lastCloudSyncAt = null;
 let editingRecordId = null;
+let statsRange = "14";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -219,6 +220,7 @@ function render() {
   renderTimeline();
   renderActiveLight();
   renderHistoryStatus();
+  if (!$("#statsModalBackdrop").hidden) renderStatsDashboard();
 }
 
 function renderHistoryStatus() {
@@ -324,6 +326,184 @@ function renderBabyProfile() {
   $("#nextVaccineName").textContent = nextVaccine
     ? `${nextVaccine.vaccineName} · ${vaccineCountdownLabel(nextVaccine.nextDate)}`
     : "点击记录疫苗与下次时间";
+}
+
+function statsDayKeys(rangeValue) {
+  const endDate = new Date();
+  endDate.setHours(0, 0, 0, 0);
+  let startDate = new Date(endDate);
+  if (rangeValue === "all") {
+    const timestamps = records
+      .filter((record) => ["feeding", "poop", "pee", "growth", "jaundice"].includes(record.type))
+      .map(recordTimestamp)
+      .filter(Number.isFinite);
+    if (timestamps.length) {
+      startDate = new Date(Math.min(...timestamps));
+      startDate.setHours(0, 0, 0, 0);
+      if (startDate > endDate) startDate = new Date(endDate);
+    } else {
+      startDate.setDate(startDate.getDate() - 6);
+    }
+  } else {
+    startDate.setDate(startDate.getDate() - (Math.max(1, Number(rangeValue) || 14) - 1));
+  }
+  const days = [];
+  const cursor = new Date(startDate);
+  while (cursor <= endDate) {
+    days.push({ key: dateKey(cursor), date: new Date(cursor), label: `${cursor.getMonth() + 1}月${cursor.getDate()}日` });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+function buildStatsData(rangeValue) {
+  const days = statsDayKeys(rangeValue);
+  const byDay = new Map(days.map((day) => [day.key, {
+    ...day,
+    feedingTotal: 0,
+    feedingCount: 0,
+    poopCount: 0,
+    peeCount: 0,
+    height: null,
+    heightAt: 0,
+    weight: null,
+    weightAt: 0,
+    jaundice: null,
+    jaundiceAt: 0,
+  }]));
+
+  records.forEach((record) => {
+    if (!["feeding", "poop", "pee", "growth", "jaundice"].includes(record.type)) return;
+    const timestamp = recordTimestamp(record);
+    if (!Number.isFinite(timestamp)) return;
+    const day = byDay.get(dateKey(new Date(timestamp)));
+    if (!day) return;
+    if (record.type === "feeding") {
+      const amount = Number(record.amount);
+      if (Number.isFinite(amount) && amount > 0) {
+        day.feedingTotal += amount;
+        day.feedingCount += 1;
+      }
+    } else if (record.type === "poop") {
+      day.poopCount += 1;
+    } else if (record.type === "pee") {
+      day.peeCount += 1;
+    } else if (record.type === "growth") {
+      const height = Number(record.height);
+      const weight = Number(record.weight);
+      if (Number.isFinite(height) && height > 0 && timestamp >= day.heightAt) {
+        day.height = height;
+        day.heightAt = timestamp;
+      }
+      if (Number.isFinite(weight) && weight > 0 && timestamp >= day.weightAt) {
+        day.weight = weight;
+        day.weightAt = timestamp;
+      }
+    } else if (record.type === "jaundice") {
+      const value = Number(record.value);
+      if (Number.isFinite(value) && value >= 0 && timestamp >= day.jaundiceAt) {
+        day.jaundice = record.unit === "μmol/L" ? value / 17.1 : value;
+        day.jaundiceAt = timestamp;
+      }
+    }
+  });
+
+  return days.map((day) => {
+    const value = byDay.get(day.key);
+    return {
+      ...value,
+      feedingAverage: value.feedingCount ? value.feedingTotal / value.feedingCount : null,
+    };
+  });
+}
+
+function chartNumber(value, decimals = 0) {
+  if (!Number.isFinite(value)) return "--";
+  const rounded = Number(value.toFixed(decimals));
+  return String(rounded);
+}
+
+function latestStatsValue(days, field) {
+  for (let index = days.length - 1; index >= 0; index -= 1) {
+    if (Number.isFinite(days[index][field])) return days[index][field];
+  }
+  return null;
+}
+
+function renderStatsChart(targetSelector, days, series, options = {}) {
+  const target = $(targetSelector);
+  const available = series.flatMap((item) => item.values.filter(Number.isFinite));
+  if (!available.length) {
+    target.innerHTML = '<div class="stats-empty"><div><span>🌱</span>还没有这项记录</div></div>';
+    return;
+  }
+
+  const width = 640;
+  const height = 190;
+  const plot = { left: 45, right: 18, top: 20, bottom: 35 };
+  const plotWidth = width - plot.left - plot.right;
+  const plotHeight = height - plot.top - plot.bottom;
+  let minimum = options.zeroBaseline ? 0 : Math.min(...available);
+  let maximum = Math.max(...available);
+  if (minimum === maximum) {
+    const padding = options.zeroBaseline ? Math.max(1, maximum * .2) : Math.max(options.singlePadding || 1, Math.abs(maximum) * .03);
+    if (!options.zeroBaseline) minimum -= padding;
+    maximum += padding;
+  } else {
+    const padding = (maximum - minimum) * .12;
+    if (!options.zeroBaseline) minimum -= padding;
+    maximum += padding;
+  }
+  if (options.zeroBaseline) maximum = Math.max(maximum, 1);
+
+  const xFor = (index) => plot.left + (days.length === 1 ? plotWidth / 2 : (index / (days.length - 1)) * plotWidth);
+  const yFor = (value) => plot.top + ((maximum - value) / (maximum - minimum)) * plotHeight;
+  const yTicks = [maximum, (maximum + minimum) / 2, minimum];
+  const grid = yTicks.map((value) => {
+    const y = yFor(value);
+    return `<line class="stats-grid-line" x1="${plot.left}" y1="${y.toFixed(2)}" x2="${width - plot.right}" y2="${y.toFixed(2)}"/><text class="stats-axis-label" x="${plot.left - 7}" y="${(y + 3).toFixed(2)}" text-anchor="end">${chartNumber(value, options.axisDecimals ?? 0)}</text>`;
+  }).join("");
+  const xIndexes = [...new Set([0, Math.round((days.length - 1) / 3), Math.round((days.length - 1) * 2 / 3), days.length - 1])];
+  const xLabels = xIndexes.map((index) => `<text class="stats-axis-label" x="${xFor(index).toFixed(2)}" y="${height - 9}" text-anchor="middle">${days[index].date.getMonth() + 1}/${days[index].date.getDate()}</text>`).join("");
+
+  const lines = series.map((item, seriesIndex) => {
+    const points = item.values.map((value, index) => Number.isFinite(value) ? { value, index, x: xFor(index), y: yFor(value) } : null).filter(Boolean);
+    const path = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+    const circles = points.map((point) => `<circle class="stats-point" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="${days.length > 30 ? 2.4 : 3.5}" fill="${item.color}"><title>${days[point.index].label} · ${item.label} ${chartNumber(point.value, item.decimals ?? 0)}${item.unit ? ` ${item.unit}` : ""}</title></circle>`).join("");
+    const latest = points[points.length - 1];
+    const latestLabel = latest && options.showLatestLabels !== false ? `<text class="stats-point-label" x="${Math.max(plot.left + 25, latest.x - 6).toFixed(2)}" y="${Math.max(11, latest.y - 7 - seriesIndex * 10).toFixed(2)}" text-anchor="end">${chartNumber(latest.value, item.decimals ?? 0)}</text>` : "";
+    return `<path class="stats-line" d="${path}" stroke="${item.color}"/>${circles}${latestLabel}`;
+  }).join("");
+
+  target.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.ariaLabel || "每日走势折线图")}" preserveAspectRatio="none"><text class="stats-axis-label" x="4" y="12">${escapeHtml(options.unitLabel || "")}</text>${grid}${xLabels}${lines}</svg>`;
+}
+
+function renderStatsDashboard() {
+  const days = buildStatsData(statsRange);
+  const start = days[0];
+  const end = days[days.length - 1];
+  $("#statsDateRange").textContent = start && end ? `${start.label}—${end.label} · 每日统计` : "每日数据走势";
+  $$('[data-stats-range]').forEach((button) => button.classList.toggle("active", button.dataset.statsRange === statsRange));
+
+  const height = latestStatsValue(days, "height");
+  const weight = latestStatsValue(days, "weight");
+  const feedingAverage = latestStatsValue(days, "feedingAverage");
+  const jaundice = latestStatsValue(days, "jaundice");
+  const today = days[days.length - 1];
+  $("#statsHeightValue").textContent = height === null ? "--" : `${chartNumber(height, 1)} cm`;
+  $("#statsWeightValue").textContent = weight === null ? "--" : `${chartNumber(weight, 2)} kg`;
+  $("#statsFeedingValue").textContent = feedingAverage === null ? "--" : `${chartNumber(feedingAverage, 1)} ml`;
+  $("#statsOutputValue").textContent = today ? `大${today.poopCount} · 小${today.peeCount}` : "--";
+  $("#statsJaundiceValue").textContent = jaundice === null ? "--" : `${chartNumber(jaundice, 1)} mg/dL`;
+
+  renderStatsChart("#heightChart", days, [{ label: "身高", values: days.map((day) => day.height), color: "#74b996", decimals: 1, unit: "cm" }], { unitLabel: "cm", axisDecimals: 1, singlePadding: .5, ariaLabel: "宝宝身高每日走势" });
+  renderStatsChart("#weightChart", days, [{ label: "体重", values: days.map((day) => day.weight), color: "#8176ca", decimals: 2, unit: "kg" }], { unitLabel: "kg", axisDecimals: 2, singlePadding: .1, ariaLabel: "宝宝体重每日走势" });
+  renderStatsChart("#feedingAverageChart", days, [{ label: "平均吃奶量", values: days.map((day) => day.feedingAverage), color: "#ef907d", decimals: 1, unit: "ml" }], { unitLabel: "ml", axisDecimals: 0, zeroBaseline: true, ariaLabel: "宝宝每日平均吃奶量走势" });
+  renderStatsChart("#outputCountChart", days, [
+    { label: "大便", values: days.map((day) => day.poopCount), color: "#e0ae3c", decimals: 0, unit: "次" },
+    { label: "小便", values: days.map((day) => day.peeCount), color: "#64aeca", decimals: 0, unit: "次" },
+  ], { unitLabel: "次", axisDecimals: 0, zeroBaseline: true, showLatestLabels: false, ariaLabel: "宝宝每日大小便次数走势" });
+  renderStatsChart("#jaundiceChart", days, [{ label: "黄疸", values: days.map((day) => day.jaundice), color: "#dfb445", decimals: 1, unit: "mg/dL" }], { unitLabel: "mg/dL", axisDecimals: 1, singlePadding: .5, ariaLabel: "宝宝黄疸数值每日走势" });
 }
 
 function renderSummary() {
@@ -1156,6 +1336,17 @@ function closeDataModal() {
   document.body.style.overflow = "";
 }
 
+function openStatsModal() {
+  renderStatsDashboard();
+  $("#statsModalBackdrop").hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function closeStatsModal() {
+  $("#statsModalBackdrop").hidden = true;
+  document.body.style.overflow = "";
+}
+
 function normalizeImportedRecord(item, index) {
   if (!item || typeof item !== "object" || !typeMeta[item.type]) return null;
   const fallbackId = `import-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
@@ -1282,6 +1473,10 @@ $("#profileEditButton").addEventListener("click", openProfileModal);
 $("#profileModalClose").addEventListener("click", closeProfileModal);
 $("#profileModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeProfileModal(); });
 $("#profileForm").addEventListener("submit", submitProfile);
+$("#statsButton").addEventListener("click", openStatsModal);
+$("#statsModalClose").addEventListener("click", closeStatsModal);
+$("#statsModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeStatsModal(); });
+$$('[data-stats-range]').forEach((button) => button.addEventListener("click", () => { statsRange = button.dataset.statsRange; renderStatsDashboard(); }));
 $("#dataButton").addEventListener("click", openDataModal);
 $("#dataModalClose").addEventListener("click", closeDataModal);
 $("#dataModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeDataModal(); });
@@ -1322,6 +1517,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!$("#modalBackdrop").hidden) closeModal();
   if (!$("#profileModalBackdrop").hidden) closeProfileModal();
+  if (!$("#statsModalBackdrop").hidden) closeStatsModal();
   if (!$("#dataModalBackdrop").hidden) closeDataModal();
 });
 

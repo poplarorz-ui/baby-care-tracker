@@ -412,7 +412,7 @@ function buildStatsData(rangeValue) {
     const value = byDay.get(day.key);
     return {
       ...value,
-      feedingAverage: value.feedingCount ? value.feedingTotal / value.feedingCount : null,
+      dailyFeedingTotal: value.feedingCount ? value.feedingTotal : null,
     };
   });
 }
@@ -438,9 +438,9 @@ function renderStatsChart(targetSelector, days, series, options = {}) {
     return;
   }
 
-  const width = 640;
-  const height = 190;
-  const plot = { left: 45, right: 18, top: 20, bottom: 35 };
+  const width = Math.max(280, Math.round(target.clientWidth || 640));
+  const height = Math.max(130, Math.round(target.clientHeight || 153));
+  const plot = { left: 39, right: 14, top: 18, bottom: 28 };
   const plotWidth = width - plot.left - plot.right;
   const plotHeight = height - plot.top - plot.bottom;
   let minimum = options.zeroBaseline ? 0 : Math.min(...available);
@@ -469,13 +469,36 @@ function renderStatsChart(targetSelector, days, series, options = {}) {
   const lines = series.map((item, seriesIndex) => {
     const points = item.values.map((value, index) => Number.isFinite(value) ? { value, index, x: xFor(index), y: yFor(value) } : null).filter(Boolean);
     const path = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-    const circles = points.map((point) => `<circle class="stats-point" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="${days.length > 30 ? 2.4 : 3.5}" fill="${item.color}"><title>${days[point.index].label} · ${item.label} ${chartNumber(point.value, item.decimals ?? 0)}${item.unit ? ` ${item.unit}` : ""}</title></circle>`).join("");
+    const circles = points.map((point) => {
+      const valuesAtPoint = series
+        .filter((entry) => Number.isFinite(entry.values[point.index]))
+        .map((entry) => `${entry.label} ${chartNumber(entry.values[point.index], entry.decimals ?? 0)}${entry.unit ? ` ${entry.unit}` : ""}`);
+      const tooltip = `${days[point.index].label} · ${valuesAtPoint.join(" · ")}`;
+      return `<g class="stats-point-target" tabindex="0" role="button" aria-label="${escapeHtml(tooltip)}" data-stats-tooltip="${escapeHtml(tooltip)}" data-point-x="${point.x.toFixed(2)}" data-point-y="${point.y.toFixed(2)}"><circle class="stats-point-hit" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="11"/><circle class="stats-point" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="${days.length > 30 ? 2.8 : 4}" fill="${item.color}"/><title>${escapeHtml(tooltip)}</title></g>`;
+    }).join("");
     const latest = points[points.length - 1];
     const latestLabel = latest && options.showLatestLabels !== false ? `<text class="stats-point-label" x="${Math.max(plot.left + 25, latest.x - 6).toFixed(2)}" y="${Math.max(11, latest.y - 7 - seriesIndex * 10).toFixed(2)}" text-anchor="end">${chartNumber(latest.value, item.decimals ?? 0)}</text>` : "";
     return `<path class="stats-line" d="${path}" stroke="${item.color}"/>${circles}${latestLabel}`;
   }).join("");
 
-  target.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.ariaLabel || "每日走势折线图")}" preserveAspectRatio="none"><text class="stats-axis-label" x="4" y="12">${escapeHtml(options.unitLabel || "")}</text>${grid}${xLabels}${lines}</svg>`;
+  target.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.ariaLabel || "每日走势折线图")}"><text class="stats-axis-label" x="3" y="11">${escapeHtml(options.unitLabel || "")}</text>${grid}${xLabels}${lines}</svg>`;
+}
+
+let statsTooltipTimer;
+function showStatsPointTooltip(point) {
+  const chart = point.closest(".stats-chart");
+  if (!chart) return;
+  $$(".stats-point-tooltip").forEach((item) => item.remove());
+  const tooltip = document.createElement("div");
+  tooltip.className = "stats-point-tooltip";
+  tooltip.textContent = point.dataset.statsTooltip;
+  const x = Number(point.dataset.pointX) || chart.clientWidth / 2;
+  const y = Number(point.dataset.pointY) || chart.clientHeight / 2;
+  tooltip.style.left = `${Math.min(Math.max(x, 68), Math.max(68, chart.clientWidth - 68))}px`;
+  tooltip.style.top = `${Math.max(17, y - 7)}px`;
+  chart.appendChild(tooltip);
+  clearTimeout(statsTooltipTimer);
+  statsTooltipTimer = setTimeout(() => tooltip.remove(), 2600);
 }
 
 function renderStatsDashboard() {
@@ -487,18 +510,18 @@ function renderStatsDashboard() {
 
   const height = latestStatsValue(days, "height");
   const weight = latestStatsValue(days, "weight");
-  const feedingAverage = latestStatsValue(days, "feedingAverage");
+  const dailyFeedingTotal = latestStatsValue(days, "dailyFeedingTotal");
   const jaundice = latestStatsValue(days, "jaundice");
   const today = days[days.length - 1];
   $("#statsHeightValue").textContent = height === null ? "--" : `${chartNumber(height, 1)} cm`;
   $("#statsWeightValue").textContent = weight === null ? "--" : `${chartNumber(weight, 2)} kg`;
-  $("#statsFeedingValue").textContent = feedingAverage === null ? "--" : `${chartNumber(feedingAverage, 1)} ml`;
+  $("#statsFeedingValue").textContent = dailyFeedingTotal === null ? "--" : `${chartNumber(dailyFeedingTotal, 1)} ml`;
   $("#statsOutputValue").textContent = today ? `大${today.poopCount} · 小${today.peeCount}` : "--";
   $("#statsJaundiceValue").textContent = jaundice === null ? "--" : `${chartNumber(jaundice, 1)} mg/dL`;
 
   renderStatsChart("#heightChart", days, [{ label: "身高", values: days.map((day) => day.height), color: "#74b996", decimals: 1, unit: "cm" }], { unitLabel: "cm", axisDecimals: 1, singlePadding: .5, ariaLabel: "宝宝身高每日走势" });
   renderStatsChart("#weightChart", days, [{ label: "体重", values: days.map((day) => day.weight), color: "#8176ca", decimals: 2, unit: "kg" }], { unitLabel: "kg", axisDecimals: 2, singlePadding: .1, ariaLabel: "宝宝体重每日走势" });
-  renderStatsChart("#feedingAverageChart", days, [{ label: "平均吃奶量", values: days.map((day) => day.feedingAverage), color: "#ef907d", decimals: 1, unit: "ml" }], { unitLabel: "ml", axisDecimals: 0, zeroBaseline: true, ariaLabel: "宝宝每日平均吃奶量走势" });
+  renderStatsChart("#feedingAverageChart", days, [{ label: "每日吃奶量", values: days.map((day) => day.dailyFeedingTotal), color: "#ef907d", decimals: 1, unit: "ml" }], { unitLabel: "ml", axisDecimals: 0, zeroBaseline: true, ariaLabel: "宝宝每日累计吃奶量走势" });
   renderStatsChart("#outputCountChart", days, [
     { label: "大便", values: days.map((day) => day.poopCount), color: "#e0ae3c", decimals: 0, unit: "次" },
     { label: "小便", values: days.map((day) => day.peeCount), color: "#64aeca", decimals: 0, unit: "次" },
@@ -1337,9 +1360,9 @@ function closeDataModal() {
 }
 
 function openStatsModal() {
-  renderStatsDashboard();
   $("#statsModalBackdrop").hidden = false;
   document.body.style.overflow = "hidden";
+  renderStatsDashboard();
 }
 
 function closeStatsModal() {
@@ -1477,6 +1500,16 @@ $("#statsButton").addEventListener("click", openStatsModal);
 $("#statsModalClose").addEventListener("click", closeStatsModal);
 $("#statsModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeStatsModal(); });
 $$('[data-stats-range]').forEach((button) => button.addEventListener("click", () => { statsRange = button.dataset.statsRange; renderStatsDashboard(); }));
+$("#statsGrid").addEventListener("click", (event) => {
+  const point = event.target.closest("[data-stats-tooltip]");
+  if (point) showStatsPointTooltip(point);
+});
+$("#statsGrid").addEventListener("keydown", (event) => {
+  const point = event.target.closest("[data-stats-tooltip]");
+  if (!point || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  showStatsPointTooltip(point);
+});
 $("#dataButton").addEventListener("click", openDataModal);
 $("#dataModalClose").addEventListener("click", closeDataModal);
 $("#dataModalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeDataModal(); });

@@ -7,6 +7,7 @@ const CLOUD_REPO = "baby-care-data";
 const CLOUD_FILE_PATH = "宝宝照护记录.json";
 const typeMeta = {
   feeding: { title: "记录吃奶", icon: "🍼", label: "吃奶", color: "var(--peach-soft)" },
+  elimination: { title: "记录排泄", icon: "💧", label: "排泄", color: "linear-gradient(135deg, var(--yellow-soft), var(--blue-soft))" },
   poop: { title: "记录大便", icon: "💩", label: "大便", color: "var(--yellow-soft)" },
   pee: { title: "记录小便", icon: "💧", label: "小便", color: "var(--blue-soft)" },
   light: { title: "记录兰光", icon: "☀️", label: "照兰光", color: "var(--violet-soft)" },
@@ -17,6 +18,7 @@ const typeMeta = {
 };
 const amountNames = { small: "小量", medium: "中量", large: "大量" };
 const FEEDING_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const LIGHT_MODULE_VISIBLE = false;
 
 let records = loadRecords();
 let deletedRecords = loadDeletedRecords();
@@ -636,7 +638,7 @@ function renderDayTimeline() {
   const daily = records.filter((record) => recordTouchesDay(record, start, end));
   const feedings = daily.filter((record) => record.type === "feeding").sort((a, b) => a.time - b.time);
   const outputs = daily.filter((record) => record.type === "poop" || record.type === "pee").sort((a, b) => a.time - b.time);
-  const lights = daily.filter((record) => record.type === "light").sort((a, b) => a.start - b.start);
+  const lights = LIGHT_MODULE_VISIBLE ? daily.filter((record) => record.type === "light").sort((a, b) => a.start - b.start) : [];
   const gridHours = Array.from({ length: 25 }, (_, hour) => hour);
   const axisHours = Array.from({ length: 9 }, (_, index) => index * 3);
   const grid = gridHours.map((hour) => `<i class="${hour % 6 === 0 ? "major" : hour % 3 === 0 ? "medium" : "hourly"}" style="left:${(hour / 24) * 100}%"></i>`).join("");
@@ -677,12 +679,13 @@ function renderDayTimeline() {
     return `<span class="light-period ${!record.end ? "active" : ""} ${left < 5 ? "edge-start" : right > 95 ? "edge-end" : ""}" style="--start:${left.toFixed(3)}%;--width:${Math.max(0, right - left).toFixed(3)}%" role="button" tabindex="0" aria-label="${escapeHtml(description)}" data-tooltip="${escapeHtml(description)}"></span>`;
   }).join("");
   const empty = `<span class="lane-empty">暂无</span>`;
-  const summary = `当天吃奶${feedings.length}次，排泄${outputs.length}次，兰光${lights.length}段`;
+  const summary = `当天吃奶${feedings.length}次，排泄${outputs.length}次${LIGHT_MODULE_VISIBLE ? `，兰光${lights.length}段` : ""}`;
+  const lightLane = LIGHT_MODULE_VISIBLE ? `<div class="chart-lane light-lane"><strong class="lane-name"><span>☀</span>兰光</strong><div class="lane-track">${lightPeriods || empty}</div></div>` : "";
   $("#dayTimeline").setAttribute("aria-label", summary);
   $("#dayTimeline").innerHTML = `<div class="chart-grid" aria-hidden="true">${grid}${nowIndicator}</div>
     <div class="chart-lane feeding-lane"><strong class="lane-name"><span>🍼</span>吃奶</strong><div class="lane-track">${feedingGaps}${feedingMarks || empty}</div></div>
     <div class="chart-lane output-lane"><strong class="lane-name"><span>💧</span>排泄</strong><div class="lane-track">${outputMarks || empty}</div></div>
-    <div class="chart-lane light-lane"><strong class="lane-name"><span>☀</span>兰光</strong><div class="lane-track">${lightPeriods || empty}</div></div>
+    ${lightLane}
     <div class="time-axis" aria-hidden="true">${axis}</div>`;
 }
 
@@ -696,6 +699,7 @@ function getPreviousSame(record) {
 function renderTimeline() {
   const { start, end } = getSelectedRange();
   let daily = records.filter((record) => recordTouchesDay(record, start, end));
+  if (!LIGHT_MODULE_VISIBLE) daily = daily.filter((record) => record.type !== "light");
   if (activeFilter === "feeding") daily = daily.filter((record) => record.type === "feeding");
   if (activeFilter === "output") daily = daily.filter((record) => record.type === "poop" || record.type === "pee");
   if (activeFilter === "light") daily = daily.filter((record) => record.type === "light");
@@ -755,6 +759,12 @@ function timelineItem(record, index) {
 }
 
 function renderActiveLight() {
+  if (!LIGHT_MODULE_VISIBLE) {
+    $("#activeLight").hidden = true;
+    clearInterval(timerId);
+    timerId = undefined;
+    return;
+  }
   const active = records.find((record) => record.type === "light" && !record.end);
   $("#activeLight").hidden = !active;
   $("#lightQuickSubtitle").textContent = active ? "正在计时中" : "开始 / 结束";
@@ -782,6 +792,7 @@ function updateCourseOptions() {
 
 function openModal(type, recordToEdit = null) {
   const meta = typeMeta[type];
+  const isElimination = type === "elimination" || type === "poop" || type === "pee";
   let target = recordToEdit;
   if (!target && type === "light") target = records.find((item) => item.type === "light" && !item.end) || null;
   editingRecordId = target?.id || null;
@@ -791,7 +802,8 @@ function openModal(type, recordToEdit = null) {
   $("#modalIcon").textContent = meta.icon;
   $("#modalIcon").style.background = meta.color;
   $("#feedingFields").hidden = type !== "feeding";
-  $("#outputFields").hidden = type !== "poop" && type !== "pee";
+  $("#eliminationTypeFields").hidden = !isElimination;
+  $("#outputFields").hidden = !isElimination;
   $("#growthFields").hidden = type !== "growth";
   $("#jaundiceFields").hidden = type !== "jaundice";
   $("#vaccineFields").hidden = type !== "vaccine";
@@ -808,6 +820,7 @@ function openModal(type, recordToEdit = null) {
   $("#durationPreview").classList.add("ongoing");
   $("#durationPreview").innerHTML = "<span>●</span> 未填结束时间，将保存为“正在进行”";
   $("#submitButton").textContent = type === "light" ? "保存兰光记录" : "保存记录";
+  if (isElimination) setRadioValue("eliminationType", target?.type || (type === "poop" ? "poop" : "pee"));
 
   if (type === "light") {
     const activeCourse = getActiveLightCourse();
@@ -905,7 +918,9 @@ function submitProfile(event) {
 
 function submitRecord(event) {
   event.preventDefault();
-  const type = $("#recordType").value;
+  const requestedType = $("#recordType").value;
+  const formData = new FormData(event.currentTarget);
+  const type = ["elimination", "poop", "pee"].includes(requestedType) ? formData.get("eliminationType") || "pee" : requestedType;
   const note = $("#noteInput").value.trim();
   const now = Date.now();
   const existingRecord = editingRecordId ? records.find((item) => item.id === editingRecordId) : null;
@@ -917,11 +932,11 @@ function submitRecord(event) {
     if (!Number.isFinite(amount) || amount <= 0) return showToast("请填写大于 0 的奶量");
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     if (!Number.isFinite(time)) return showToast("请正确填写发生日期和时间");
-    record = { ...base, feedingType: new FormData(event.currentTarget).get("feedingType"), amount, time };
+    record = { ...base, feedingType: formData.get("feedingType"), amount, time };
   } else if (type === "poop" || type === "pee") {
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     if (!Number.isFinite(time)) return showToast("请正确填写发生日期和时间");
-    record = { ...base, amount: new FormData(event.currentTarget).get("outputAmount"), time };
+    record = { ...base, amount: formData.get("outputAmount"), time };
   } else if (type === "growth") {
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     const heightValue = $("#heightInput").value.trim();
@@ -938,7 +953,7 @@ function submitRecord(event) {
     const value = Number($("#jaundiceValueInput").value);
     if (!Number.isFinite(time)) return showToast("请正确填写测量日期和时间");
     if (!Number.isFinite(value) || value < 0) return showToast("请正确填写黄疸数值");
-    record = { ...base, time, value, unit: new FormData(event.currentTarget).get("jaundiceUnit") || "mg/dL" };
+    record = { ...base, time, value, unit: formData.get("jaundiceUnit") || "mg/dL" };
   } else if (type === "vaccine") {
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     const vaccineName = $("#vaccineNameInput").value.trim();

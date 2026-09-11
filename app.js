@@ -37,6 +37,12 @@ let cloudSyncDetail = "";
 let lastCloudSyncAt = null;
 let editingRecordId = null;
 let statsRange = "14";
+let recordIndexCache = null;
+let storedRecordsSnapshot = localStorage.getItem(STORAGE_KEY) || "";
+let storedDeletedSnapshot = localStorage.getItem(DELETED_KEY) || "";
+let storedProfileSnapshot = localStorage.getItem(PROFILE_KEY) || "";
+
+const EMPTY_RECORDS = Object.freeze([]);
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -87,15 +93,93 @@ function loadSyncConfig() {
 }
 
 function saveRecords() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  localStorage.setItem(DELETED_KEY, JSON.stringify(deletedRecords));
-  if (babyProfile) localStorage.setItem(PROFILE_KEY, JSON.stringify(babyProfile));
+  storedRecordsSnapshot = JSON.stringify(records);
+  storedDeletedSnapshot = JSON.stringify(deletedRecords);
+  localStorage.setItem(STORAGE_KEY, storedRecordsSnapshot);
+  localStorage.setItem(DELETED_KEY, storedDeletedSnapshot);
+  if (babyProfile) {
+    storedProfileSnapshot = JSON.stringify(babyProfile);
+    localStorage.setItem(PROFILE_KEY, storedProfileSnapshot);
+  }
   scheduleAutoBackup();
   scheduleCloudSync();
 }
 
 function recordTimestamp(record) {
   return record.type === "light" ? Number(record.start) : Number(record.time);
+}
+
+function invalidateRecordIndex() {
+  recordIndexCache = null;
+}
+
+function getRecordIndex() {
+  if (recordIndexCache) return recordIndexCache;
+  const byType = new Map();
+  const byDay = new Map();
+  let firstTimestamp = Infinity;
+  let lastTimestamp = -Infinity;
+
+  records.forEach((record) => {
+    if (!byType.has(record.type)) byType.set(record.type, []);
+    byType.get(record.type).push(record);
+    const timestamp = recordTimestamp(record);
+    if (!Number.isFinite(timestamp)) return;
+    firstTimestamp = Math.min(firstTimestamp, timestamp);
+    lastTimestamp = Math.max(lastTimestamp, timestamp);
+    if (record.type === "light") return;
+    const key = dateKey(new Date(timestamp));
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(record);
+  });
+
+  byType.forEach((items) => items.sort((a, b) => {
+    const left = recordTimestamp(a);
+    const right = recordTimestamp(b);
+    return (Number.isFinite(left) ? left : -Infinity) - (Number.isFinite(right) ? right : -Infinity);
+  }));
+  byDay.forEach((items) => items.sort((a, b) => recordTimestamp(a) - recordTimestamp(b)));
+
+  const previousById = new Map();
+  byType.forEach((items) => {
+    let groupStart = 0;
+    let previous = null;
+    while (groupStart < items.length) {
+      const timestamp = recordTimestamp(items[groupStart]);
+      let groupEnd = groupStart + 1;
+      while (groupEnd < items.length && recordTimestamp(items[groupEnd]) === timestamp) groupEnd += 1;
+      for (let index = groupStart; index < groupEnd; index += 1) previousById.set(items[index].id, previous);
+      previous = items[groupEnd - 1];
+      groupStart = groupEnd;
+    }
+  });
+
+  const vaccineSchedules = [...(byType.get("vaccine") || EMPTY_RECORDS)]
+    .filter((record) => /^\d{4}-\d{2}-\d{2}$/.test(record.nextDate || ""))
+    .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+
+  recordIndexCache = {
+    byType,
+    byDay,
+    previousById,
+    vaccineSchedules,
+    firstTimestamp: Number.isFinite(firstTimestamp) ? firstTimestamp : null,
+    lastTimestamp: Number.isFinite(lastTimestamp) ? lastTimestamp : null,
+  };
+  return recordIndexCache;
+}
+
+function getTypeRecords(type) {
+  return getRecordIndex().byType.get(type) || EMPTY_RECORDS;
+}
+
+function getSelectedDayRecords() {
+  const index = getRecordIndex();
+  const daily = index.byDay.get(selectedDate) || EMPTY_RECORDS;
+  if (!LIGHT_MODULE_VISIBLE) return daily;
+  const { start, end } = getSelectedRange();
+  const lights = getTypeRecords("light").filter((record) => recordTouchesDay(record, start, end));
+  return lights.length ? [...daily, ...lights] : daily;
 }
 
 function pad(value) { return String(value).padStart(2, "0"); }
@@ -168,7 +252,7 @@ function lightCourseId(record) {
 }
 
 function getLightCourses() {
-  const sorted = records.filter((record) => record.type === "light").sort((a, b) => Number(a.start) - Number(b.start));
+  const sorted = getTypeRecords("light");
   const courses = [];
   let course = null;
   sorted.forEach((record) => {
@@ -231,9 +315,9 @@ function renderHistoryStatus() {
     : "浏览器已保存";
   $("#historyStatus").textContent = records.length ? `${cloudLabel} · ${records.length}条` : (syncConfig ? cloudLabel : "浏览器存储已就绪");
   $("#dataRecordCount").textContent = records.length ? `已保存 ${records.length} 条历史记录` : "已启用浏览器自动保存";
-  const timestamps = records.map(recordTimestamp).filter(Number.isFinite).sort((a, b) => a - b);
-  $("#dataDateRange").textContent = timestamps.length
-    ? `${formatMonthDay(timestamps[0])} 至 ${formatMonthDay(timestamps[timestamps.length - 1])} · ${syncConfig ? "本机保留并同步到私有仓库" : "自动保存在本机"}`
+  const { firstTimestamp, lastTimestamp } = getRecordIndex();
+  $("#dataDateRange").textContent = firstTimestamp !== null
+    ? `${formatMonthDay(firstTimestamp)} 至 ${formatMonthDay(lastTimestamp)} · ${syncConfig ? "本机保留并同步到私有仓库" : "自动保存在本机"}`
     : "新增记录会自动保存在当前浏览器";
 }
 
@@ -280,9 +364,12 @@ function formatBabyAge(now = Date.now()) {
 }
 
 function latestRecordWithValue(type, field) {
-  return records
-    .filter((record) => record.type === type && record[field] !== null && record[field] !== undefined && record[field] !== "")
-    .sort((a, b) => Number(b.time) - Number(a.time))[0];
+  const items = getTypeRecords(type);
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const record = items[index];
+    if (record[field] !== null && record[field] !== undefined && record[field] !== "") return record;
+  }
+  return undefined;
 }
 
 function vaccineDateLabel(dateValue) {
@@ -320,9 +407,7 @@ function renderBabyProfile() {
   $("#latestJaundiceTime").textContent = jaundice ? `${formatMonthDay(jaundice.time)} ${formatTime(jaundice.time)}` : "点击记录";
 
   const today = dateKey(new Date());
-  const schedules = records
-    .filter((record) => record.type === "vaccine" && /^\d{4}-\d{2}-\d{2}$/.test(record.nextDate || ""))
-    .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+  const schedules = getRecordIndex().vaccineSchedules;
   const nextVaccine = schedules.find((record) => record.nextDate >= today) || schedules[schedules.length - 1];
   $("#nextVaccineDate").textContent = nextVaccine ? vaccineDateLabel(nextVaccine.nextDate) : "待安排";
   $("#nextVaccineName").textContent = nextVaccine
@@ -532,15 +617,14 @@ function renderStatsDashboard() {
 }
 
 function renderSummary() {
-  const { start, end } = getSelectedRange();
-  const daily = records.filter((record) => recordTouchesDay(record, start, end));
+  const daily = getSelectedDayRecords();
   const feedings = daily.filter((record) => record.type === "feeding");
   const breast = feedings.filter((record) => record.feedingType === "breast");
   const formula = feedings.filter((record) => record.feedingType === "formula");
   const sumAmount = (items) => items.reduce((total, item) => total + (Number(item.amount) || 0), 0);
   const poops = daily.filter((record) => record.type === "poop");
   const pees = daily.filter((record) => record.type === "pee");
-  const lightCourse = getCurrentLightCourse();
+  const lightCourse = LIGHT_MODULE_VISIBLE ? getCurrentLightCourse() : null;
 
   $("#feedingCount").textContent = feedings.length;
   $("#feedingAmount").textContent = `${sumAmount(feedings)} ml`;
@@ -554,16 +638,19 @@ function renderSummary() {
 }
 
 function latestRecord(type, timestampField = "time", predicate = () => true) {
-  return records
-    .filter((record) => record.type === type && predicate(record) && Number.isFinite(Number(record[timestampField])))
-    .sort((a, b) => Number(b[timestampField]) - Number(a[timestampField]))[0];
+  const items = getTypeRecords(type);
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const record = items[index];
+    if (predicate(record) && Number.isFinite(Number(record[timestampField]))) return record;
+  }
+  return undefined;
 }
 
 function renderElapsedSummaries() {
   const now = Date.now();
   const latestPoop = latestRecord("poop");
   const latestPee = latestRecord("pee");
-  const course = getCurrentLightCourse();
+  const course = LIGHT_MODULE_VISIBLE ? getCurrentLightCourse() : null;
   const activeLight = course?.activeLight;
   const latestStoppedLight = course ? [...course.records].filter((record) => record.end).sort((a, b) => b.end - a.end)[0] : null;
   const stoppedAt = Number(latestStoppedLight?.end) || Number(course?.lastAt);
@@ -595,8 +682,7 @@ function relativeDayLabel(timestamp) {
 function renderFeedingCountdown() {
   const card = $("#feedingCountdown");
   const progress = $("#countdownProgress");
-  const feedings = records.filter((record) => record.type === "feeding" && Number.isFinite(Number(record.time))).sort((a, b) => b.time - a.time);
-  const latest = feedings[0];
+  const latest = latestRecord("feeding");
   if (!latest) {
     card.classList.remove("has-record", "overdue");
     $("#countdownTitle").textContent = "距离下次吃奶";
@@ -635,7 +721,7 @@ function markerEdgeClass(position) {
 
 function renderDayTimeline() {
   const { start, end } = getSelectedRange();
-  const daily = records.filter((record) => recordTouchesDay(record, start, end));
+  const daily = getSelectedDayRecords();
   const feedings = daily.filter((record) => record.type === "feeding").sort((a, b) => a.time - b.time);
   const outputs = daily.filter((record) => record.type === "poop" || record.type === "pee").sort((a, b) => a.time - b.time);
   const lights = LIGHT_MODULE_VISIBLE ? daily.filter((record) => record.type === "light").sort((a, b) => a.start - b.start) : [];
@@ -690,15 +776,11 @@ function renderDayTimeline() {
 }
 
 function getPreviousSame(record) {
-  const timestamp = record.type === "light" ? record.start : record.time;
-  const candidates = records.filter((item) => item.type === record.type && item.id !== record.id && (item.type === "light" ? item.start : item.time) < timestamp);
-  if (!candidates.length) return null;
-  return candidates.sort((a, b) => (b.type === "light" ? b.start : b.time) - (a.type === "light" ? a.start : a.time))[0];
+  return getRecordIndex().previousById.get(record.id) || null;
 }
 
 function renderTimeline() {
-  const { start, end } = getSelectedRange();
-  let daily = records.filter((record) => recordTouchesDay(record, start, end));
+  let daily = [...getSelectedDayRecords()];
   if (!LIGHT_MODULE_VISIBLE) daily = daily.filter((record) => record.type !== "light");
   if (activeFilter === "feeding") daily = daily.filter((record) => record.type === "feeding");
   if (activeFilter === "output") daily = daily.filter((record) => record.type === "poop" || record.type === "pee");
@@ -1001,6 +1083,7 @@ function submitRecord(event) {
   }
   if (existingRecord) Object.assign(existingRecord, record);
   else records.push(record);
+  invalidateRecordIndex();
   saveRecords();
   selectedDate = dateKey(new Date(type === "light" ? record.start : record.time));
   closeModal();
@@ -1024,6 +1107,7 @@ function stopActiveLight() {
   if (!active) return;
   active.end = Date.now();
   active.updatedAt = active.end;
+  invalidateRecordIndex();
   saveRecords();
   clearInterval(timerId); timerId = undefined;
   render();
@@ -1042,6 +1126,7 @@ function deleteRecord(id) {
   if (!record || !window.confirm(`确定删除这条“${typeMeta[record.type].label}”记录吗？`)) return;
   records = records.filter((item) => item.id !== id);
   deletedRecords[id] = Date.now();
+  invalidateRecordIndex();
   saveRecords();
   render();
   showToast("记录已删除");
@@ -1156,7 +1241,20 @@ async function readCloudSnapshot(config) {
   };
 }
 
+function cloudSnapshotFingerprint(recordValues = records, deletedValues = deletedRecords, profileValue = babyProfile) {
+  const normalizedRecords = recordValues
+    .map(normalizeImportedRecord)
+    .filter(Boolean)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const normalizedDeleted = Object.entries(deletedValues || {})
+    .map(([id, timestamp]) => [id, Number(timestamp) || 0])
+    .filter(([, timestamp]) => timestamp > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify({ profile: normalizeProfile(profileValue), records: normalizedRecords, deletedRecords: normalizedDeleted });
+}
+
 function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords, remoteProfile) {
+  const beforeFingerprint = cloudSnapshotFingerprint();
   const mergedDeleted = { ...deletedRecords };
   Object.entries(remoteDeletedRecords || {}).forEach(([id, timestamp]) => {
     const value = Number(timestamp) || 0;
@@ -1188,9 +1286,19 @@ function mergeCloudSnapshot(remoteRecords, remoteDeletedRecords, remoteProfile) 
   if (remoteProfile && (!babyProfile || remoteProfile.updatedAt >= (Number(babyProfile.updatedAt) || 0))) {
     babyProfile = remoteProfile;
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  localStorage.setItem(DELETED_KEY, JSON.stringify(deletedRecords));
-  if (babyProfile) localStorage.setItem(PROFILE_KEY, JSON.stringify(babyProfile));
+  invalidateRecordIndex();
+  const changed = beforeFingerprint !== cloudSnapshotFingerprint();
+  if (!changed) return false;
+
+  storedRecordsSnapshot = JSON.stringify(records);
+  storedDeletedSnapshot = JSON.stringify(deletedRecords);
+  localStorage.setItem(STORAGE_KEY, storedRecordsSnapshot);
+  localStorage.setItem(DELETED_KEY, storedDeletedSnapshot);
+  if (babyProfile) {
+    storedProfileSnapshot = JSON.stringify(babyProfile);
+    localStorage.setItem(PROFILE_KEY, storedProfileSnapshot);
+  }
+  return true;
 }
 
 function preserveMissingLightCourse(preferred, fallback) {
@@ -1266,9 +1374,15 @@ async function syncWithCloud({ silent = false } = {}) {
   try {
     await verifyPrivateRepository(syncConfig);
     let completed = false;
+    let recordsChanged = false;
     for (let attempt = 0; attempt < 3 && !completed; attempt += 1) {
       const remote = await readCloudSnapshot(syncConfig);
-      mergeCloudSnapshot(remote.records, remote.deletedRecords, remote.profile);
+      const remoteFingerprint = cloudSnapshotFingerprint(remote.records, remote.deletedRecords, remote.profile);
+      recordsChanged = mergeCloudSnapshot(remote.records, remote.deletedRecords, remote.profile) || recordsChanged;
+      if (cloudSnapshotFingerprint() === remoteFingerprint) {
+        completed = true;
+        break;
+      }
       const response = await writeCloudSnapshot(syncConfig, remote.sha);
       if (response.ok) {
         completed = true;
@@ -1278,7 +1392,8 @@ async function syncWithCloud({ silent = false } = {}) {
     }
     if (!completed) throw new Error("github-sync-conflict");
     lastCloudSyncAt = Date.now();
-    render();
+    if (recordsChanged) render();
+    else renderHistoryStatus();
     setCloudSyncState("synced", `共 ${records.length} 条 · 已保存至 ${syncConfig.owner}/${syncConfig.repo}`);
     if (!silent) showToast(`云同步完成 · 共 ${records.length} 条记录`);
   } catch (error) {
@@ -1469,6 +1584,7 @@ async function importRecords(event) {
     });
     records = [...merged.values()];
     if (importedProfile && (!babyProfile || importedProfile.updatedAt >= (Number(babyProfile.updatedAt) || 0))) babyProfile = importedProfile;
+    invalidateRecordIndex();
     saveRecords();
     render();
     closeDataModal();
@@ -1481,9 +1597,21 @@ async function importRecords(event) {
 }
 
 function syncHistoryFromStorage(showNotice = false) {
+  const nextRecordsSnapshot = localStorage.getItem(STORAGE_KEY) || "";
+  const nextDeletedSnapshot = localStorage.getItem(DELETED_KEY) || "";
+  const nextProfileSnapshot = localStorage.getItem(PROFILE_KEY) || "";
+  if (
+    nextRecordsSnapshot === storedRecordsSnapshot
+    && nextDeletedSnapshot === storedDeletedSnapshot
+    && nextProfileSnapshot === storedProfileSnapshot
+  ) return;
+  storedRecordsSnapshot = nextRecordsSnapshot;
+  storedDeletedSnapshot = nextDeletedSnapshot;
+  storedProfileSnapshot = nextProfileSnapshot;
   records = loadRecords();
   deletedRecords = loadDeletedRecords();
   babyProfile = loadProfile();
+  invalidateRecordIndex();
   render();
   if (showNotice && records.length) showToast(`已同步 ${records.length} 条历史记录`);
 }
@@ -1558,7 +1686,7 @@ $("#timeline").addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete]");
   if (deleteButton) deleteRecord(deleteButton.dataset.delete);
 });
-window.addEventListener("storage", (event) => { if (event.key === STORAGE_KEY || event.key === PROFILE_KEY) syncHistoryFromStorage(true); });
+window.addEventListener("storage", (event) => { if (event.key === STORAGE_KEY || event.key === DELETED_KEY || event.key === PROFILE_KEY) syncHistoryFromStorage(true); });
 window.addEventListener("pageshow", () => syncHistoryFromStorage(false));
 document.addEventListener("visibilitychange", () => { if (!document.hidden) syncHistoryFromStorage(false); });
 document.addEventListener("keydown", (event) => {

@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#fff8f3" />
-    <meta name="description" content="简单好用的宝宝吃奶、排泄与兰光照护记录工具" />
+    <meta name="description" content="简单好用的宝宝吃奶、排泄照护记录工具，按日龄提示成长阶段重点" />
     <title>宝宝照护日记</title>
-    <link rel="stylesheet" href="styles.css?v=20260901-01" />
+    <link rel="stylesheet" href="styles.css?v=20261014-04" />
   </head>
   <body>
     <div class="page-shell">
@@ -35,10 +35,11 @@
           </button>
           <div class="date-toolbar welcome-date-toolbar" aria-label="选择查看日期">
             <button class="date-arrow" id="previousDay" type="button" aria-label="前一天">‹</button>
-            <button class="date-display" id="dateDisplay" type="button" aria-label="选择日期">
+            <!-- 日期输入框透明覆盖在日期文字上，手机（含微信内置浏览器）点按时直接弹出系统日期选择器 -->
+            <label class="date-display" id="dateDisplay">
               <span id="datePrimary"></span><small id="dateSecondary"></small>
-            </button>
-            <input class="hidden-date" id="datePicker" type="date" />
+              <input class="date-overlay" id="datePicker" type="date" aria-label="选择查看日期" />
+            </label>
             <button class="date-arrow" id="nextDay" type="button" aria-label="后一天">›</button>
             <button class="today-button" id="todayButton" type="button" aria-label="回到今天">今天</button>
           </div>
@@ -113,6 +114,8 @@
           <button id="stopLightButton" type="button">现在结束</button>
         </section>
 
+        <section class="care-guide" id="careGuide" aria-label="成长指南" aria-live="polite"></section>
+
         <section aria-labelledby="summaryTitle">
           <div class="section-heading">
             <div><p class="eyebrow">今日概览</p><h2 id="summaryTitle">一天的小小足迹</h2></div>
@@ -173,7 +176,21 @@
               <label><input type="radio" name="feedingType" value="formula" checked /><span>🍼 奶粉</span></label>
               <label><input type="radio" name="feedingType" value="breast" /><span>🤱 母乳</span></label>
             </div>
-            <label for="feedingAmountInput">奶量 <small>（毫升）</small></label>
+            <div class="breast-method-fields" id="breastMethodFields" hidden>
+              <label>母乳方式</label>
+              <div class="segmented breast-method-choice">
+                <label><input type="radio" name="breastMethod" value="direct" /><span>🤱 亲喂</span></label>
+                <label><input type="radio" name="breastMethod" value="bottle" /><span>🍼 瓶喂母乳</span></label>
+              </div>
+              <div id="nurseMinutesField" hidden>
+                <label for="nurseMinutesInput">亲喂时长 <small>（分钟，选填）</small></label>
+                <div class="number-field"><input id="nurseMinutesInput" type="number" inputmode="numeric" min="1" max="180" step="1" placeholder="例如 15" /><span>分钟</span></div>
+                <div class="amount-chips" aria-label="快速选择亲喂时长">
+                  <button type="button" data-nurse-minutes="10">10</button><button type="button" data-nurse-minutes="15">15</button><button type="button" data-nurse-minutes="20">20</button><button type="button" data-nurse-minutes="30">30</button>
+                </div>
+              </div>
+            </div>
+            <label for="feedingAmountInput">奶量 <small id="feedingAmountHint">（毫升）</small></label>
             <div class="number-field"><input id="feedingAmountInput" type="number" inputmode="decimal" min="0" step="1" placeholder="例如 90" /><span>ml</span></div>
             <div class="amount-chips" aria-label="快速选择奶量">
               <button type="button" data-amount="30">30</button><button type="button" data-amount="60">60</button><button type="button" data-amount="90">90</button><button type="button" data-amount="120">120</button>
@@ -311,7 +328,7 @@
             <div class="stats-chart" id="weightChart" aria-label="宝宝体重每日走势折线图"></div>
           </article>
           <article class="stats-card">
-            <header><div><span class="stats-dot feeding-dot"></span><strong>每日吃奶量</strong><small>当天所有奶量累计</small></div><b id="statsFeedingValue">--</b></header>
+            <header><div><span class="stats-dot feeding-dot"></span><strong>每日吃奶量</strong><small>已计量奶量累计，亲喂未填量不计入</small></div><b id="statsFeedingValue">--</b></header>
             <div class="stats-chart" id="feedingAverageChart" aria-label="宝宝每日累计吃奶量折线图"></div>
           </article>
           <article class="stats-card">
@@ -361,6 +378,7 @@
       </section>
     </div>
 
-    <script src="app.js?v=20260911-01"></script>
+    <script src="care-guide.js?v=20261014-04"></script>
+    <script src="app.js?v=20261014-04"></script>
   </body>
 </html>

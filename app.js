@@ -17,6 +17,22 @@ const typeMeta = {
   vaccine: { title: "记录疫苗", icon: "💉", label: "疫苗", color: "#edf3ff" },
 };
 const amountNames = { small: "小量", medium: "中量", large: "大量" };
+const breastMethodNames = { direct: "亲喂", bottle: "瓶喂" };
+
+/* 母乳记录可选 breastMethod（direct 亲喂 / bottle 瓶喂）；旧记录没有该字段时显示为“母乳”。亲喂可以不填奶量。 */
+function feedingKindLabel(record) {
+  if (record.feedingType !== "breast") return "奶粉";
+  return breastMethodNames[record.breastMethod] ? `母乳${breastMethodNames[record.breastMethod]}` : "母乳";
+}
+
+function feedingAmountLabel(record, spaced = false) {
+  const amount = Number(record.amount);
+  const parts = [];
+  if (amount > 0) parts.push(`${amount}${spaced ? " " : ""}ml`);
+  if (Number(record.nurseMinutes) > 0) parts.push(`${record.nurseMinutes}${spaced ? " " : ""}分钟`);
+  if (parts.length) return parts.join(" · ");
+  return record.breastMethod === "direct" ? "未计量" : `0${spaced ? " " : ""}ml`;
+}
 const FEEDING_INTERVAL_MS = 3 * 60 * 60 * 1000;
 const LIGHT_MODULE_VISIBLE = false;
 
@@ -301,6 +317,7 @@ function render() {
   renderDate();
   renderBabyProfile();
   renderFeedingCountdown();
+  renderCareGuide();
   renderSummary();
   renderDayTimeline();
   renderTimeline();
@@ -628,7 +645,9 @@ function renderSummary() {
 
   $("#feedingCount").textContent = feedings.length;
   $("#feedingAmount").textContent = `${sumAmount(feedings)} ml`;
-  $("#breastStats").textContent = `${breast.length}次 · ${sumAmount(breast)}ml`;
+  const directCount = breast.filter((record) => record.breastMethod === "direct").length;
+  const breastMl = sumAmount(breast);
+  $("#breastStats").textContent = `${breast.length}次${breastMl || !directCount ? ` · ${breastMl}ml` : ""}${directCount ? `（亲喂${directCount}次）` : ""}`;
   $("#formulaStats").textContent = `${formula.length}次 · ${sumAmount(formula)}ml`;
   $("#poopCount").textContent = poops.length;
   $("#peeCount").textContent = pees.length;
@@ -699,12 +718,11 @@ function renderFeedingCountdown() {
   const next = Number(latest.time) + FEEDING_INTERVAL_MS;
   const remaining = next - now;
   const elapsedRatio = Math.min(1, Math.max(0, (now - Number(latest.time)) / FEEDING_INTERVAL_MS));
-  const feedType = latest.feedingType === "breast" ? "母乳" : "奶粉";
   card.classList.add("has-record");
   card.classList.toggle("overdue", remaining <= 0);
   $("#countdownTitle").textContent = remaining > 0 ? "距离下次吃奶" : "已到建议吃奶时间";
   $("#countdownTime").textContent = remaining > 0 ? formatCountdown(remaining) : `已超过 ${formatCountdown(-remaining)}`;
-  $("#countdownLastFeed").textContent = `上次 ${relativeDayLabel(latest.time)} ${formatTime(latest.time)} · ${feedType} ${latest.amount || 0}ml`;
+  $("#countdownLastFeed").textContent = `上次 ${relativeDayLabel(latest.time)} ${formatTime(latest.time)} · ${feedingKindLabel(latest)} ${feedingAmountLabel(latest)}`;
   $("#nextFeedingTime").textContent = formatTime(next);
   $("#nextFeedingDate").textContent = `${relativeDayLabel(next)} · ${formatMonthDay(next)}`;
   progress.style.strokeDashoffset = String(125.66 * (1 - elapsedRatio));
@@ -743,8 +761,7 @@ function renderDayTimeline() {
   }).join("");
   const feedingMarks = feedings.map((record) => {
     const position = chartPosition(record.time, start, end);
-    const kind = record.feedingType === "breast" ? "母乳" : "奶粉";
-    const description = `${kind} · ${record.amount || 0}ml · ${formatTime(record.time)}`;
+    const description = `${feedingKindLabel(record)} · ${feedingAmountLabel(record)} · ${formatTime(record.time)}`;
     return `<span class="chart-marker feeding-mark ${markerEdgeClass(position)}" style="--position:${position.toFixed(3)}%" role="img" tabindex="0" aria-label="${escapeHtml(description)}" data-tooltip="${escapeHtml(description)}"><span class="marker-symbol" aria-hidden="true">🍼</span></span>`;
   }).join("");
   const outputMarks = outputs.map((record) => {
@@ -806,8 +823,8 @@ function timelineItem(record, index) {
   let detail = record.note || "";
   let courseBadges = "";
   if (record.type === "feeding") {
-    title = record.feedingType === "breast" ? "母乳" : "奶粉";
-    value = `${record.amount || 0} ml`;
+    title = feedingKindLabel(record);
+    value = feedingAmountLabel(record, true);
   } else if (record.type === "poop" || record.type === "pee") {
     value = amountNames[record.amount] || "中量";
   } else if (record.type === "light") {
@@ -872,6 +889,16 @@ function updateCourseOptions() {
   if (!hasEnd) $("#lightCourseEndInput").checked = false;
 }
 
+function updateFeedingFields() {
+  const isBreast = document.querySelector('input[name="feedingType"]:checked')?.value === "breast";
+  const method = document.querySelector('input[name="breastMethod"]:checked')?.value;
+  const isDirect = isBreast && method === "direct";
+  $("#breastMethodFields").hidden = !isBreast;
+  $("#nurseMinutesField").hidden = !isDirect;
+  $("#feedingAmountHint").textContent = isDirect ? "（毫升，选填，亲喂一般不用填）" : "（毫升）";
+  $("#feedingAmountInput").placeholder = isDirect ? "不知道可以留空" : "例如 90";
+}
+
 function openModal(type, recordToEdit = null) {
   const meta = typeMeta[type];
   const isElimination = type === "elimination" || type === "poop" || type === "pee";
@@ -904,6 +931,13 @@ function openModal(type, recordToEdit = null) {
   $("#submitButton").textContent = type === "light" ? "保存兰光记录" : "保存记录";
   if (isElimination) setRadioValue("eliminationType", target?.type || (type === "poop" ? "poop" : "pee"));
 
+  if (type === "feeding" && !target) {
+    const lastFeeding = latestRecord("feeding");
+    const lastBreast = latestRecord("feeding", "time", (record) => record.feedingType === "breast" && record.breastMethod);
+    if (lastFeeding) setRadioValue("feedingType", lastFeeding.feedingType);
+    setRadioValue("breastMethod", lastBreast?.breastMethod || "direct");
+  }
+
   if (type === "light") {
     const activeCourse = getActiveLightCourse();
     $("#lightCourseStartInput").checked = !activeCourse;
@@ -926,7 +960,9 @@ function openModal(type, recordToEdit = null) {
       setDateTimeFields("event", new Date(target.time));
       if (type === "feeding") {
         setRadioValue("feedingType", target.feedingType);
-        $("#feedingAmountInput").value = target.amount;
+        if (target.breastMethod) setRadioValue("breastMethod", target.breastMethod);
+        $("#feedingAmountInput").value = Number(target.amount) > 0 ? target.amount : "";
+        $("#nurseMinutesInput").value = target.nurseMinutes ?? "";
       } else if (type === "poop" || type === "pee") setRadioValue("outputAmount", target.amount);
       else if (type === "growth") {
         $("#heightInput").value = target.height ?? "";
@@ -945,6 +981,7 @@ function openModal(type, recordToEdit = null) {
     }
   }
   updateCourseOptions();
+  updateFeedingFields();
   if (type === "light") updateDurationPreview();
   $("#modalBackdrop").hidden = false;
   document.body.style.overflow = "hidden";
@@ -1010,11 +1047,30 @@ function submitRecord(event) {
   const base = { id: existingRecord?.id || `${now}-${Math.random().toString(16).slice(2)}`, type, note, createdAt: existingRecord?.createdAt || now, updatedAt: now };
   let record;
   if (type === "feeding") {
-    const amount = Number($("#feedingAmountInput").value);
-    if (!Number.isFinite(amount) || amount <= 0) return showToast("请填写大于 0 的奶量");
+    const feedingType = formData.get("feedingType") === "breast" ? "breast" : "formula";
+    const breastMethod = feedingType === "breast" ? formData.get("breastMethod") : null;
+    const isDirect = breastMethod === "direct";
+    const amountValue = $("#feedingAmountInput").value.trim();
+    const amount = amountValue ? Number(amountValue) : null;
+    const minutesValue = isDirect ? $("#nurseMinutesInput").value.trim() : "";
+    const nurseMinutes = minutesValue ? Number(minutesValue) : null;
+    if (amount === null && !isDirect) return showToast("请填写大于 0 的奶量");
+    if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) return showToast("请填写大于 0 的奶量");
+    if (nurseMinutes !== null && (!Number.isFinite(nurseMinutes) || nurseMinutes <= 0)) return showToast("请正确填写亲喂时长");
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     if (!Number.isFinite(time)) return showToast("请正确填写发生日期和时间");
-    record = { ...base, feedingType: formData.get("feedingType"), amount, time };
+    record = {
+      ...base,
+      feedingType,
+      amount,
+      time,
+      ...(breastMethod === "direct" || breastMethod === "bottle" ? { breastMethod } : {}),
+      ...(nurseMinutes !== null ? { nurseMinutes } : {}),
+    };
+    if (existingRecord) {
+      delete existingRecord.breastMethod;
+      delete existingRecord.nurseMinutes;
+    }
   } else if (type === "poop" || type === "pee") {
     const time = parseDateTime($("#eventDateInput").value, $("#eventTimeInput").value);
     if (!Number.isFinite(time)) return showToast("请正确填写发生日期和时间");
@@ -1509,9 +1565,21 @@ function normalizeImportedRecord(item, index) {
 
   if (item.type === "feeding") {
     const time = Number(item.time);
-    const amount = Number(item.amount);
-    if (!Number.isFinite(time) || !Number.isFinite(amount) || amount <= 0) return null;
-    return { ...base, time, amount, feedingType: item.feedingType === "breast" ? "breast" : "formula" };
+    const feedingType = item.feedingType === "breast" ? "breast" : "formula";
+    const breastMethod = feedingType === "breast" && breastMethodNames[item.breastMethod] ? item.breastMethod : null;
+    const hasAmount = item.amount !== null && item.amount !== undefined && item.amount !== "";
+    const amount = hasAmount ? Number(item.amount) : null;
+    const nurseMinutes = Number(item.nurseMinutes);
+    if (!Number.isFinite(time)) return null;
+    if (amount === null ? breastMethod !== "direct" : !Number.isFinite(amount) || amount <= 0) return null;
+    return {
+      ...base,
+      time,
+      amount,
+      feedingType,
+      ...(breastMethod ? { breastMethod } : {}),
+      ...(breastMethod === "direct" && Number.isFinite(nurseMinutes) && nurseMinutes > 0 ? { nurseMinutes } : {}),
+    };
   }
   if (item.type === "poop" || item.type === "pee") {
     const time = Number(item.time);
@@ -1671,7 +1739,11 @@ $("#recordForm").addEventListener("submit", submitRecord);
 $("#previousDay").addEventListener("click", () => changeDay(-1));
 $("#nextDay").addEventListener("click", () => changeDay(1));
 $("#todayButton").addEventListener("click", () => { selectedDate = dateKey(new Date()); render(); });
-$("#dateDisplay").addEventListener("click", () => { try { $("#datePicker").showPicker(); } catch { $("#datePicker").click(); } });
+$("#datePicker").addEventListener("click", (event) => {
+  // 桌面浏览器点击输入框主体不会弹出日历，主动打开；手机端点按本身就会弹出系统选择器
+  if (typeof event.currentTarget.showPicker !== "function") return;
+  try { event.currentTarget.showPicker(); } catch { /* 已经打开或不支持时忽略 */ }
+});
 $("#datePicker").addEventListener("change", (event) => { if (event.target.value) { selectedDate = event.target.value; render(); } });
 $("#stopLightButton").addEventListener("click", stopActiveLight);
 $("#exportButton").addEventListener("click", exportRecords);
@@ -1679,6 +1751,8 @@ $$('#lightStartDateInput, #lightStartTimeInput, #lightEndDateInput, #lightEndTim
 $("#lightCourseStartInput").addEventListener("change", updateCourseOptions);
 $$('[data-now-for]').forEach((button) => button.addEventListener("click", () => { setDateTimeFields(button.dataset.nowFor); updateDurationPreview(); }));
 $$('[data-amount]').forEach((button) => button.addEventListener("click", () => { $("#feedingAmountInput").value = button.dataset.amount; }));
+$$('[data-nurse-minutes]').forEach((button) => button.addEventListener("click", () => { $("#nurseMinutesInput").value = button.dataset.nurseMinutes; }));
+$$('input[name="feedingType"], input[name="breastMethod"]').forEach((input) => input.addEventListener("change", updateFeedingFields));
 $$('[data-filter]').forEach((button) => button.addEventListener("click", () => { activeFilter = button.dataset.filter; $$('[data-filter]').forEach((item) => item.classList.toggle("active", item === button)); renderTimeline(); }));
 $("#timeline").addEventListener("click", (event) => {
   const editButton = event.target.closest("[data-edit]");

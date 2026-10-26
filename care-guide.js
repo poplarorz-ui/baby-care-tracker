@@ -949,3 +949,86 @@ function bindCareGuideEvents(container) {
     }
   });
 }
+
+/*
+ * 国家免疫规划疫苗程序（2025 年起百白破调整为 2、4、6、18 月龄），用于自动推算“下次疫苗”。
+ * aliases 用来匹配已记录的疫苗名称；五联疫苗同时计入脊灰和百白破。只做提示，不会自动写入记录。
+ */
+const VACCINE_SCHEDULE = [
+  { family: "乙肝", name: "乙肝疫苗", aliases: ["乙肝", "hepb"], months: [0, 1, 6] },
+  { family: "卡介苗", name: "卡介苗", aliases: ["卡介", "bcg"], months: [0] },
+  { family: "脊灰", name: "脊灰疫苗", aliases: ["脊灰", "脊髓灰质炎", "ipv", "opv", "糖丸", "五联"], months: [2, 3, 4, 48] },
+  { family: "百白破", name: "百白破疫苗", aliases: ["百白破", "dtap", "五联"], months: [2, 4, 6, 18] },
+  { family: "A群流脑", name: "A群流脑疫苗", aliases: ["a群流脑", "流脑a", "mpsv-a", "mpsva"], months: [6, 9] },
+  { family: "麻腮风", name: "麻腮风疫苗", aliases: ["麻腮风", "mmr", "麻疹"], months: [8, 18] },
+  { family: "乙脑", name: "乙脑疫苗", aliases: ["乙脑", "乙型脑炎"], months: [8, 24] },
+  { family: "甲肝", name: "甲肝疫苗", aliases: ["甲肝", "hepa"], months: [18] },
+  { family: "A+C流脑", name: "A群C群流脑疫苗", aliases: ["a群c群", "ac流脑", "a+c", "ac群"], months: [36, 72] },
+  { family: "白破", name: "白破疫苗", aliases: ["白破"], months: [72] },
+];
+
+function addMonthsKey(birthAt, months) {
+  const date = new Date(birthAt);
+  const day = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  date.setDate(Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()));
+  return dateKey(date);
+}
+
+function vaccineFamilyOf(name) {
+  const text = String(name || "").toLowerCase().replace(/\s/g, "");
+  return VACCINE_SCHEDULE.filter((item) => {
+    // “A群C群流脑”不能算进“A群流脑”
+    if (item.family === "A群流脑" && /c群|ac|a\+c/.test(text)) return false;
+    return item.aliases.some((alias) => text.includes(alias));
+  });
+}
+
+function recordedVaccineDoses() {
+  const doses = new Map();
+  getTypeRecords("vaccine").forEach((record) => {
+    const doseText = String(record.dose || "");
+    const doseNumber = Number(doseText.match(/(\d+)/)?.[1]) || "一二三四五".indexOf(doseText.match(/第([一二三四五])/)?.[1] ?? "-") + 1;
+    vaccineFamilyOf(record.vaccineName).forEach((item) => {
+      const current = doses.get(item.family) || { count: 0, maxDose: 0 };
+      current.count += 1;
+      current.maxDose = Math.max(current.maxDose, doseNumber);
+      doses.set(item.family, current);
+    });
+  });
+  return doses;
+}
+
+/*
+ * 待接种列表（按建议日期排序）。超过建议日期 30 天仍未记录的剂次视为已在别处接种（如出生时在医院打的），
+ * 不再提示，避免首页一直显示“已过期”；以接种本为准。
+ */
+function pendingVaccines(todayKey = dateKey(new Date())) {
+  if (!babyProfile?.birthAt) return [];
+  const doses = recordedVaccineDoses();
+  const cutoff = new Date(`${todayKey}T00:00:00`);
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffKey = dateKey(cutoff);
+  const pending = [];
+  VACCINE_SCHEDULE.forEach((item) => {
+    const recorded = doses.get(item.family);
+    const done = recorded ? Math.max(recorded.count, recorded.maxDose) : 0;
+    item.months.forEach((months, index) => {
+      if (index < done) return;
+      const dueKey = addMonthsKey(babyProfile.birthAt, months);
+      if (dueKey < cutoffKey) return;
+      pending.push({ family: item.family, name: item.name, dose: `第${index + 1}剂`, months, dueKey });
+    });
+  });
+  return pending.sort((a, b) => a.dueKey.localeCompare(b.dueKey) || a.months - b.months);
+}
+
+/* 首页卡片用：同一天的几种疫苗合并显示。 */
+function nextSuggestedVaccineGroup() {
+  const pending = pendingVaccines();
+  if (!pending.length) return null;
+  const dueKey = pending[0].dueKey;
+  const items = pending.filter((item) => item.dueKey === dueKey);
+  return { dueKey, items, label: items.map((item) => `${item.family}${item.dose}`).join("、") };
+}

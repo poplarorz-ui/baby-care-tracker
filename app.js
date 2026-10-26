@@ -427,11 +427,22 @@ function renderBabyProfile() {
 
   const today = dateKey(new Date());
   const schedules = getRecordIndex().vaccineSchedules;
-  const nextVaccine = schedules.find((record) => record.nextDate >= today) || schedules[schedules.length - 1];
-  $("#nextVaccineDate").textContent = nextVaccine ? vaccineDateLabel(nextVaccine.nextDate) : "待安排";
-  $("#nextVaccineName").textContent = nextVaccine
-    ? `${nextVaccine.vaccineName} · ${vaccineCountdownLabel(nextVaccine.nextDate)}`
-    : "点击记录疫苗与下次时间";
+  // 手动填写的未来预约优先；没有时按国家免疫规划和已记录的疫苗自动推算
+  const plannedVaccine = schedules.find((record) => record.nextDate >= today);
+  const suggested = plannedVaccine ? null : nextSuggestedVaccineGroup();
+  const staleVaccine = schedules[schedules.length - 1];
+  if (plannedVaccine || (!suggested && staleVaccine)) {
+    const shown = plannedVaccine || staleVaccine;
+    $("#nextVaccineDate").textContent = vaccineDateLabel(shown.nextDate);
+    $("#nextVaccineName").textContent = `${shown.vaccineName} · ${vaccineCountdownLabel(shown.nextDate)}`;
+  } else if (suggested) {
+    const due = vaccineCountdownLabel(suggested.dueKey);
+    $("#nextVaccineDate").textContent = vaccineDateLabel(suggested.dueKey);
+    $("#nextVaccineName").textContent = `建议 ${suggested.label} · ${due.startsWith("已过") ? `${due}，尽快安排` : due}`;
+  } else {
+    $("#nextVaccineDate").textContent = "待安排";
+    $("#nextVaccineName").textContent = "点击记录疫苗与下次时间";
+  }
 }
 
 function statsDayKeys(rangeValue) {
@@ -1006,6 +1017,17 @@ function openModal(type, recordToEdit = null) {
   $("#durationPreview").innerHTML = "<span>●</span> 未填结束时间，将保存为“正在进行”";
   $("#submitButton").textContent = type === "light" ? "保存兰光记录" : "保存记录";
   if (isElimination) setRadioValue("eliminationType", target?.type || (type === "poop" ? "poop" : "pee"));
+
+  if (type === "vaccine" && !target) {
+    // 按免疫规划预填本次疫苗，下次日期取下一次就诊（同一天合打的不算）
+    const pending = pendingVaccines();
+    const current = pending[0];
+    if (current) {
+      $("#vaccineNameInput").value = current.name;
+      $("#vaccineDoseInput").value = current.dose;
+      $("#nextVaccineDateInput").value = pending.find((item) => item.dueKey > current.dueKey)?.dueKey || "";
+    }
+  }
 
   if (type === "feeding" && !target) {
     const lastFeeding = latestRecord("feeding");

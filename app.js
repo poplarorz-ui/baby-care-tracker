@@ -33,7 +33,9 @@ function feedingAmountLabel(record, spaced = false) {
   if (parts.length) return parts.join(" · ");
   return record.breastMethod === "direct" ? "未计量" : `0${spaced ? " " : ""}ml`;
 }
-const FEEDING_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_FEEDING_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const FEEDING_SESSION_GAP_MS = 40 * 60 * 1000;
+let feedingRhythmCache = null;
 const LIGHT_MODULE_VISIBLE = false;
 
 let records = loadRecords();
@@ -698,6 +700,74 @@ function relativeDayLabel(timestamp) {
   return formatMonthDay(timestamp);
 }
 
+function medianOf(values) {
+  const sorted = [...values].sort((x, y) => x - y);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/*
+ * 按宝宝最近的吃奶规律推算间隔：
+ * 40 分钟内的连续几次（补奶、换边）算同一顿；只取 45 分钟到 8 小时的间隔，排除漏记造成的长空档。
+ * 优先用近 7 天里“同一时段”（上一顿开始时刻前后 2 小时）的间隔中位数，夜里的长觉也会被反映出来；
+ * 同时段样本不足时用近 3 天全部间隔；仍不足则用默认 3 小时。
+ */
+function getFeedingRhythm() {
+  const index = getRecordIndex();
+  if (feedingRhythmCache?.index === index) return feedingRhythmCache.value;
+  const feedings = getTypeRecords("feeding").filter((record) => Number.isFinite(Number(record.time)));
+  let value = null;
+  if (feedings.length) {
+    const latestTime = Number(feedings[feedings.length - 1].time);
+    const sessionStarts = [];
+    let lastTime = -Infinity;
+    feedings.forEach((record) => {
+      const time = Number(record.time);
+      if (time < latestTime - 7 * 86400000) return;
+      if (time - lastTime >= FEEDING_SESSION_GAP_MS) sessionStarts.push(time);
+      lastTime = time;
+    });
+    const intervals = [];
+    for (let i = 1; i < sessionStarts.length; i += 1) {
+      const gap = sessionStarts[i] - sessionStarts[i - 1];
+      if (gap >= 45 * 60000 && gap <= 8 * 3600000) intervals.push({ start: sessionStarts[i - 1], gap });
+    }
+    const base = sessionStarts[sessionStarts.length - 1];
+    const minuteOfDay = (time) => { const date = new Date(time); return date.getHours() * 60 + date.getMinutes(); };
+    const target = minuteOfDay(base);
+    const sameSlot = intervals.filter(({ start }) => {
+      const diff = Math.abs(minuteOfDay(start) - target);
+      return Math.min(diff, 1440 - diff) <= 120;
+    });
+    const recent = intervals.filter(({ start }) => start >= latestTime - 3 * 86400000);
+    let interval = DEFAULT_FEEDING_INTERVAL_MS;
+    let basis = "default";
+    let samples = 0;
+    if (sameSlot.length >= 3) {
+      interval = medianOf(sameSlot.map((item) => item.gap));
+      basis = "slot";
+      samples = sameSlot.length;
+    } else if (recent.length >= 3) {
+      interval = medianOf(recent.map((item) => item.gap));
+      basis = "recent";
+      samples = recent.length;
+    }
+    interval = Math.min(6 * 3600000, Math.max(3600000, Math.round(interval / 300000) * 300000));
+    value = { base, interval, basis, samples };
+  }
+  feedingRhythmCache = { index, value };
+  return value;
+}
+
+function feedingRhythmLabel(rhythm) {
+  if (!rhythm || rhythm.basis === "default") return { short: "默认 3 小时", detail: "记录满几顿后会自动按宝宝的吃奶规律推算" };
+  const short = `按规律约 ${formatInterval(rhythm.interval)}`;
+  const detail = rhythm.basis === "slot"
+    ? `按近 7 天这个时段的 ${rhythm.samples} 次间隔推算（取中位数），40 分钟内的补奶算同一顿`
+    : `按近 3 天的 ${rhythm.samples} 次间隔推算（取中位数），40 分钟内的补奶算同一顿`;
+  return { short, detail };
+}
+
 function renderFeedingCountdown() {
   const card = $("#feedingCountdown");
   const progress = $("#countdownProgress");
@@ -706,18 +776,24 @@ function renderFeedingCountdown() {
     card.classList.remove("has-record", "overdue");
     $("#countdownTitle").textContent = "距离下次吃奶";
     $("#countdownTime").textContent = "--:--:--";
-    $("#countdownLastFeed").textContent = "记录一次吃奶后开始 3 小时倒计时";
+    $("#countdownLastFeed").textContent = "记录吃奶后开始倒计时，会按宝宝的吃奶规律推算";
+    $("#countdownBasis").textContent = "按吃奶规律";
+    $("#countdownBasis").title = "";
     $("#nextFeedingTime").textContent = "--:--";
     $("#nextFeedingDate").textContent = "等待记录";
     progress.style.strokeDashoffset = "125.66";
-    card.setAttribute("aria-label", "还没有吃奶记录，记录后开始三小时倒计时");
+    card.setAttribute("aria-label", "还没有吃奶记录，记录后按吃奶规律开始倒计时");
     return;
   }
 
   const now = Date.now();
-  const next = Number(latest.time) + FEEDING_INTERVAL_MS;
+  const rhythm = getFeedingRhythm();
+  const basisLabel = feedingRhythmLabel(rhythm);
+  const next = rhythm.base + rhythm.interval;
   const remaining = next - now;
-  const elapsedRatio = Math.min(1, Math.max(0, (now - Number(latest.time)) / FEEDING_INTERVAL_MS));
+  const elapsedRatio = Math.min(1, Math.max(0, (now - rhythm.base) / rhythm.interval));
+  $("#countdownBasis").textContent = basisLabel.short;
+  $("#countdownBasis").title = basisLabel.detail;
   card.classList.add("has-record");
   card.classList.toggle("overdue", remaining <= 0);
   $("#countdownTitle").textContent = remaining > 0 ? "距离下次吃奶" : "已到建议吃奶时间";
